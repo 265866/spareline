@@ -18,7 +18,8 @@ NoNewPrivileges=true
 # spareline-adb.service listens. Network=host would expose every host-local
 # service to the container.
 Network=pasta:-T,5037
-# Loopback only: tailscale serve is the sole way in.
+# Loopback only: a reverse proxy on the host (such as tailscale serve or
+# Caddy) is the only way in.
 PublishPort=127.0.0.1:8740:8740
 Environment=ADB_SERVER=127.0.0.1:5037
 # Settings for the app (SITE and the variables in the main README).
