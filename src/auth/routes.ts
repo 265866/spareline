@@ -402,29 +402,14 @@ export function keyRoutes(auth: Auth) {
 				}
 			},
 			{
-				beforeHandle: sameSiteDelete,
 				params: z.object({ id: z.coerce.number().int() }),
-				response: { 200: ApiKeyView, 403: ApiError, 404: ApiError },
+				response: { 200: ApiKeyView, 404: ApiError },
 				detail: {
 					summary: "Revoke an API key",
-					description: "Requests with it are refused from now on.",
+					description:
+						"Requests with it are refused from now on, and its open event streams and screens close.",
 					tags: ["auth"],
 				},
 			},
 		);
-}
-
-// A DELETE carries no body to prove it is not cross-site; the session cookie
-// is SameSite=Strict, and Sec-Fetch-Site turns away the rest.
-function sameSiteDelete({
-	request,
-	set,
-}: {
-	request: Request;
-	set: { status?: number | string };
-}) {
-	if (request.headers.get("sec-fetch-site") === "cross-site") {
-		set.status = 403;
-		return { error: "cross-site request refused" };
-	}
 }

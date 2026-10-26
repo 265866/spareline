@@ -94,9 +94,9 @@ Scripts use API keys instead of a password. Create one on the **Settings** page 
 curl -H "Authorization: Bearer sl_..." https://HOST/api/v1/numbers/+15125550101/messages?limit=5
 ```
 
-A **read** key may make GET requests only: texts, attachments, events, the inventory, and the status. A **full** key may also edit, set phones up, and open screens. No key can create keys or change a password, so a leaked key cannot lock you out. Revoking a key on the Settings page (or `bun src/cli.ts keys revoke ID`) stops it at once. Keys are stored as SHA-256 hashes, and edits made with one record the key's name.
+A **read** key may make GET requests only: texts, attachments, events, the inventory, and the status. A **full** key may also edit, set phones up, and open screens. No key can create keys or change a password, so a leaked key cannot lock you out. Revoking a key on the Settings page stops it at once, including its open event streams; `bun src/cli.ts keys revoke ID` does too, within 5 seconds for streams already open. Changing or resetting a password leaves keys valid: revoke them separately. Keys are stored as SHA-256 hashes, and edits made with one record the key's name.
 
-Requests that change something must be JSON (or carry `X-Spareline: 1`), so a page on another site cannot make them in a signed-in browser; the session cookie is `SameSite=Strict`, and `Secure` when the request came over HTTPS (directly or with `X-Forwarded-Proto: https` from the proxy).
+A page on another site cannot act through a signed-in browser: the session cookie is `SameSite=Strict`, requests that change something need a JSON body (or `X-Spareline: 1`) or a method such as `PATCH` or `DELETE`, all of which need a CORS preflight this server never grants, and screens check the WebSocket's `Origin`. The cookie is also `Secure` when the request came over HTTPS (directly or with `X-Forwarded-Proto: https` from the proxy).
 
 ## Develop
 

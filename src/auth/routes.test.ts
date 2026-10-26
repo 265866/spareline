@@ -430,7 +430,7 @@ test("a read key may only read; neither kind may manage keys or passwords", asyn
 		});
 		expect(password.status).toBe(403);
 	}
-	// A full key may change things; edits say which key made them.
+	// A full key may change things (app.test.ts checks the edit records the key).
 	const edit = await call("PATCH", "/api/v1/numbers/1", {
 		body: { note: "x" },
 		headers: bearer(full),
@@ -465,8 +465,32 @@ test("a revoked or unknown key is refused, even next to a valid session cookie",
 			})
 		).status,
 	).toBe(404);
-	const crossSite = await call("DELETE", `/api/v1/api-keys/${keys[0]?.id}`, {
-		headers: { cookie: session, "sec-fetch-site": "cross-site" },
-	});
-	expect(crossSite.status).toBe(403);
+});
+
+test("revoking a key ends its open event stream at once", async () => {
+	const { session } = await signIn();
+	const key = await createKey(session, "stream", "read");
+	const server = app.listen({ hostname: "127.0.0.1", port: 0 });
+	try {
+		const base = `http://127.0.0.1:${server.server?.port}`;
+		const stream = await fetch(`${base}/api/v1/events?types=message`, {
+			headers: bearer(key),
+		});
+		expect(stream.status).toBe(200);
+		const reader = stream.body?.getReader();
+		const ended = (async () => {
+			for (;;) if ((await reader?.read())?.done ?? true) return true;
+		})();
+		const id = auth.listKeys().find((apiKey) => apiKey.name === "stream")?.id;
+		const revoke = await fetch(`${base}/api/v1/api-keys/${id}`, {
+			method: "DELETE",
+			headers: { cookie: session },
+		});
+		expect(revoke.status).toBe(200);
+		expect(
+			await Promise.race([ended, Bun.sleep(2_000).then(() => false)]),
+		).toBe(true);
+	} finally {
+		await server.stop(true);
+	}
 });
