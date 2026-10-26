@@ -1,2 +1,6 @@
 spareline
 Copyright 2026 265866
+
+This product includes scrcpy-server 3.3.3 (vendor/scrcpy-server-v3.3.3),
+Copyright (C) 2018 Genymobile and Copyright (C) 2018-2025 Romain Vimont,
+licensed under the Apache License, Version 2.0.
