@@ -66,6 +66,14 @@ export type NumberRow = NumberSummary & {
 		slot: number;
 		removedAt: string | null;
 	} | null;
+	messageCount: number;
+	lastMessage: {
+		seq: number;
+		from: string | null;
+		// The start of the body.
+		preview: string;
+		receivedAt: string;
+	} | null;
 };
 
 export class ConflictError extends Error {}
@@ -312,6 +320,24 @@ export class Inventory {
 					)
 					.get(binding.sim_id)
 			: null;
+		// Both from the (number_id, seq) index: the count without reading rows,
+		// and the newest message by seq without a sort.
+		const last = this.db
+			.query<
+				{
+					count: number;
+					seq: number;
+					sender: string | null;
+					preview: string;
+					received_at: string;
+				},
+				{ id: number }
+			>(
+				`SELECT (SELECT count(*) FROM messages WHERE number_id = $id) AS count,
+				seq, sender, substr(body, 1, 160) AS preview, received_at
+				FROM messages WHERE number_id = $id ORDER BY seq DESC LIMIT 1`,
+			)
+			.get({ id });
 		return {
 			id: number.id,
 			e164: number.e164,
@@ -329,6 +355,15 @@ export class Inventory {
 						model: placement.model,
 						slot: placement.slot,
 						removedAt: placement.to_at,
+					}
+				: null,
+			messageCount: last?.count ?? 0,
+			lastMessage: last
+				? {
+						seq: last.seq,
+						from: last.sender,
+						preview: last.preview,
+						receivedAt: last.received_at,
 					}
 				: null,
 		};
