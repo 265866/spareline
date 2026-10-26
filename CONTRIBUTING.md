@@ -15,7 +15,7 @@ Thanks for helping. Bug reports, fixes, and support for more phone models are al
    Shell scripts in `deploy/podman/` must also pass `shellcheck -x -P SCRIPTDIR -s bash deploy/podman/*.sh`.
 3. Write commit subjects and the pull request title as [Conventional Commits](https://www.conventionalcommits.org/), such as `fix(sms): keep an MMS that arrives in two parts`. CI checks both.
 
-[CLAUDE.md](CLAUDE.md) lists the project's rules; the ones that matter most:
+[AGENTS.md](AGENTS.md) lists the project's rules; the ones that matter most:
 
 - The app never turns a radio or data on. Probes stay read-only.
 - Tests run against output recorded from real phones (`test/fixtures/`), not invented doubles.
