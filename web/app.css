@@ -1,0 +1,16 @@
+@import "tailwindcss";
+
+@theme {
+	--font-sans:
+		ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+	--font-mono: ui-monospace, "SF Mono", "Cascadia Mono", Consolas, monospace;
+}
+
+@layer base {
+	body {
+		@apply bg-zinc-50 text-zinc-900 antialiased dark:bg-zinc-950 dark:text-zinc-100;
+	}
+	* {
+		@apply border-zinc-200 dark:border-zinc-800;
+	}
+}
