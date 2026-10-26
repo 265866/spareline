@@ -10,7 +10,9 @@
 		"bun": ">=1.4.2"
 	},
 	"scripts": {
+		"dev": "bun --watch scripts/dev.ts",
 		"start": "bun src/server.ts",
+		"build": "bun scripts/build-web.ts",
 		"check": "biome check .",
 		"format": "biome check --write .",
 		"typecheck": "tsc --noEmit",
