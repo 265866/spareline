@@ -24,6 +24,8 @@ export type {
 // Window events re-dispatched from the one EventSource (useDeviceEvents).
 export const MESSAGE_EVENT = "message-event";
 export const STREAM_OPEN_EVENT = "stream-open";
+// A request was refused for want of a session (see useSession).
+export const SIGNED_OUT_EVENT = "signed-out";
 
 export class ApiError extends Error {
 	constructor(
@@ -45,6 +47,8 @@ export async function api<T>(
 		body: init.body === undefined ? undefined : JSON.stringify(init.body),
 	});
 	if (!response.ok) {
+		if (response.status === 401 && path !== "/auth/login")
+			window.dispatchEvent(new Event(SIGNED_OUT_EVENT));
 		const text = await response.text();
 		let message = text;
 		try {

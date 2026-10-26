@@ -3,6 +3,8 @@ import { join, normalize, sep } from "node:path";
 import { openapi } from "@elysiajs/openapi";
 import { Elysia } from "elysia";
 import { z } from "zod";
+import type { Auth } from "../auth/auth";
+import { authRoutes, guard, loginOf, revocation } from "../auth/routes";
 import type { Bus } from "../bus";
 import { toE164 } from "../devices/identifiers";
 import type { Devices } from "../devices/manager";
@@ -39,6 +41,8 @@ import {
 import { batteryView, numberView, phoneView } from "./views";
 
 export type AppOptions = {
+	// Users and sessions; every API route but sign-in and the docs needs one.
+	auth: Auth;
 	inventory: Inventory;
 	devices: Devices;
 	events: Bus<DeviceEventRow>;
@@ -54,18 +58,33 @@ export type AppOptions = {
 	screens?: ScreenManager | null;
 };
 
-// Tailscale Serve sets this header to the tailnet login of the person making
-// the request. There is no app auth (the tailnet is the boundary); the login
-// is recorded on inventory edits as an audit trail only.
-const LOGIN_HEADER = "tailscale-user-login";
-
 export function createApp(options: AppOptions) {
 	const { inventory, devices } = options;
 	const monitor = options.monitor ?? null;
-	const login = (headers: Record<string, string | undefined>) =>
-		headers[LOGIN_HEADER] ?? null;
 
 	const api = new Elysia({ prefix: "/api/v1" })
+		.get(
+			"/health",
+			() => {
+				const adb = devices.adb();
+				const known = inventory.listPhones();
+				const online = known.filter(
+					(phone) => devices.get(phone.serial)?.status === "online",
+				).length;
+				return {
+					ok: adb.reachable,
+					adbReachable: adb.reachable,
+					phonesOnline: online,
+					phonesOffline: known.length - online,
+					alerts: monitor?.alerts().length ?? 0,
+					version: options.version,
+				};
+			},
+			{
+				response: { 200: Health },
+				detail: { summary: "Liveness and phone summary", tags: ["health"] },
+			},
+		)
 		.get(
 			"/phones",
 			() => ({
@@ -92,8 +111,8 @@ export function createApp(options: AppOptions) {
 		)
 		.patch(
 			"/phones/:serial",
-			({ params, body, headers }) => {
-				const row = inventory.patchPhone(params.serial, body, login(headers));
+			({ params, body, request }) => {
+				const row = inventory.patchPhone(params.serial, body, loginOf(request));
 				return phoneView(row, devices.get(row.serial));
 			},
 			{
@@ -123,10 +142,10 @@ export function createApp(options: AppOptions) {
 		)
 		.patch(
 			"/sims/:key",
-			({ params, body, headers }) => {
+			({ params, body, request }) => {
 				const sim = inventory.findSim(params.key);
 				if (!sim) throw new NotFoundError(`no SIM ${params.key}`);
-				return inventory.patchSim(sim.id, body, login(headers));
+				return inventory.patchSim(sim.id, body, loginOf(request));
 			},
 			{
 				body: SimPatch,
@@ -161,7 +180,7 @@ export function createApp(options: AppOptions) {
 		)
 		.patch(
 			"/numbers/:key",
-			({ params, body, headers }) => {
+			({ params, body, request }) => {
 				const row = inventory.findNumber(params.key);
 				if (!row) throw new NotFoundError(`no number ${params.key}`);
 				let e164: string | null | undefined = body.e164;
@@ -174,7 +193,7 @@ export function createApp(options: AppOptions) {
 						);
 				}
 				return numberView(
-					inventory.patchNumber(row.id, { ...body, e164 }, login(headers)),
+					inventory.patchNumber(row.id, { ...body, e164 }, loginOf(request)),
 					devices,
 				);
 			},
@@ -255,7 +274,8 @@ export function createApp(options: AppOptions) {
 					kinds,
 					parseCursor(headers["last-event-id"] ?? query.after, kinds),
 					query.latest ?? 0,
-					request.signal,
+					// Ends when the client goes away or its session ends.
+					revocation(request).signal,
 				);
 			},
 			{
@@ -291,6 +311,7 @@ export function createApp(options: AppOptions) {
 	const app = new Elysia({
 		websocket: { maxPayloadLength: MAX_VIEWER_MESSAGE_BYTES },
 	})
+		.onRequest(guard(options.auth))
 		.use(
 			openapi({
 				path: "/api/docs",
@@ -300,8 +321,18 @@ export function createApp(options: AppOptions) {
 						title: "spareline",
 						version: options.version,
 						description:
-							"Inventory and live state of USB-attached Android phones. No app auth: the tailnet is the access boundary.",
+							"Phones on USB, their numbers, and every text they receive. Every route except sign-in needs a session: sign in with POST /api/v1/auth/login, which sets the session cookie.",
 					},
+					components: {
+						securitySchemes: {
+							session: {
+								type: "apiKey",
+								in: "cookie",
+								name: "spareline_session",
+							},
+						},
+					},
+					security: [{ session: [] }],
 				},
 				mapJsonSchema: { zod: z.toJSONSchema },
 				exclude: { paths: ["/", "/assets/*", "/*"] },
@@ -329,28 +360,18 @@ export function createApp(options: AppOptions) {
 				return { error: "not found" };
 			}
 		})
-		.get(
-			"/healthz",
-			() => {
-				const adb = devices.adb();
-				const known = inventory.listPhones();
-				const online = known.filter(
-					(phone) => devices.get(phone.serial)?.status === "online",
-				).length;
-				return {
-					ok: adb.reachable,
-					adbReachable: adb.reachable,
-					phonesOnline: online,
-					phonesOffline: known.length - online,
-					alerts: monitor?.alerts().length ?? 0,
-					version: options.version,
-				};
+		// Public, for container and proxy health checks: says only whether the
+		// adb server is reachable.
+		.get("/healthz", () => ({ ok: devices.adb().reachable }), {
+			response: { 200: z.object({ ok: z.boolean() }) },
+			detail: {
+				summary: "Liveness (no sign-in needed)",
+				description: "ok is true when the adb server is reachable.",
+				security: [],
+				tags: ["health"],
 			},
-			{
-				response: { 200: Health },
-				detail: { summary: "Liveness and phone summary", tags: ["health"] },
-			},
-		)
+		})
+		.use(authRoutes(options.auth))
 		.use(api)
 		.use(messageRoutes(inventory, options.messages));
 

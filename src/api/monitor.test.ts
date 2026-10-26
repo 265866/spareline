@@ -2,6 +2,7 @@ import { afterEach, expect, test } from "bun:test";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { B30, startMonitor } from "../../test/monitor-phone";
+import { signedIn, testSession } from "../../test/session";
 import { Bus } from "../bus";
 import { Inventory } from "../inventory/store";
 import { MessageStore } from "../sms/store";
@@ -20,7 +21,9 @@ afterEach(async () => {
 async function setup(options: Parameters<typeof startMonitor>[0] = {}) {
 	const monitor = await startMonitor(options);
 	stop = monitor.stop;
+	const session = testSession(monitor.db);
 	const app = createApp({
+		auth: session.auth,
 		inventory: new Inventory(monitor.db),
 		devices: monitor.devices,
 		events: monitor.bus,
@@ -34,6 +37,7 @@ async function setup(options: Parameters<typeof startMonitor>[0] = {}) {
 		webDir: null,
 		version: "test",
 	});
+	signedIn(app, session.cookie);
 	// As the web client sends them: a JSON body, even an empty one.
 	const call = async (
 		method: string,
@@ -75,7 +79,7 @@ test("the status view carries rule results, data use, and alerts", async () => {
 	).toMatchObject({ ok: true, autoFix: true, observed: "8 MiB" });
 	expect(policy?.dataAlarm).toBe(false);
 	expect(view.alerts).toEqual([]);
-	expect(await (await call("GET", "/healthz")).json()).toMatchObject({
+	expect(await (await call("GET", "/api/v1/health")).json()).toMatchObject({
 		ok: true,
 		alerts: 0,
 	});
@@ -102,7 +106,7 @@ test("Provision and check run on demand; an offline phone is refused", async () 
 	expect(((await check.json()) as { reverted: unknown[] }).reverted).toEqual([
 		{ rule: "ble_scan_off", before: "1", after: "0", fixed: true },
 	]);
-	expect(await (await call("GET", "/healthz")).json()).toMatchObject({
+	expect(await (await call("GET", "/api/v1/health")).json()).toMatchObject({
 		alerts: 0,
 	});
 

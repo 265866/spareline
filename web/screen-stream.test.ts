@@ -169,6 +169,21 @@ test("a drawn frame resets the backoff and the failure count", async () => {
 	expect(stream.state.phase).toBe("live");
 });
 
+test("a screen closed because the session ended signs the page out, without retrying", async () => {
+	let signedOut = 0;
+	const { stream, delays } = start([false], {
+		signedOut: () => {
+			signedOut++;
+		},
+	});
+	await until(() => stream.state.phase === "live");
+	sockets[0]?.close(4003);
+	await until(() => stream.state.stopped);
+	expect(signedOut).toBe(1);
+	expect(delays).toEqual([]);
+	expect(stream.state.message).toBe("Signed out");
+});
+
 test("backoff is capped at 30 s", async () => {
 	const { stream, delays } = start([false]);
 	await until(() => stream.state.phase === "live");

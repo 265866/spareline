@@ -1,6 +1,7 @@
 import { existsSync } from "node:fs";
 import { Elysia } from "elysia";
 import { z } from "zod";
+import { revocation } from "../auth/routes";
 import type { Bus } from "../bus";
 import { toE164 } from "../devices/identifiers";
 import { type Inventory, NotFoundError } from "../inventory/store";
@@ -103,6 +104,22 @@ function waitFor(
 const pageDescription =
 	"Without `after`: newest first, optionally `before` a seq. With `after`: oldest first, and `wait` (0-30 s) holds the request open until a message arrives, answering `{messages: [], cursor: after}` on timeout. A text stored before its number was known reappears with a higher seq once it is; (phone, provider, providerId, receivedAt) identifies a text across seqs.";
 
+// A long poll stops waiting when the client goes away or its session ends;
+// a request that does not wait needs neither.
+async function waiting<T>(
+	request: Request,
+	wait: number | undefined,
+	page: (signal: AbortSignal) => Promise<T>,
+): Promise<T> {
+	if (!wait) return page(request.signal);
+	const { signal, release } = revocation(request);
+	try {
+		return await page(signal);
+	} finally {
+		release();
+	}
+}
+
 export function messageRoutes(inventory: Inventory, options: MessageOptions) {
 	return new Elysia({ prefix: "/api/v1" })
 		.get(
@@ -112,7 +129,9 @@ export function messageRoutes(inventory: Inventory, options: MessageOptions) {
 				if (id === null) throw new NotFoundError(`no number ${params.key}`);
 				// Bun closes idle connections after 10 s by default.
 				if (query.wait) server?.timeout(request, query.wait + 10);
-				return messagePage(options, { numberId: id }, query, request.signal);
+				return waiting(request, query.wait, (signal) =>
+					messagePage(options, { numberId: id }, query, signal),
+				);
 			},
 			{
 				params: z.object({
@@ -131,11 +150,13 @@ export function messageRoutes(inventory: Inventory, options: MessageOptions) {
 			"/messages",
 			({ query, request, server }) => {
 				if (query.wait) server?.timeout(request, query.wait + 10);
-				return messagePage(
-					options,
-					{ search: query.q?.trim() || undefined },
-					query,
-					request.signal,
+				return waiting(request, query.wait, (signal) =>
+					messagePage(
+						options,
+						{ search: query.q?.trim() || undefined },
+						query,
+						signal,
+					),
 				);
 			},
 			{

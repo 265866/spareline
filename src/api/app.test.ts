@@ -4,6 +4,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { FakeAdb, recordedTrackLists } from "../../test/fake-adb";
+import { signedIn, testSession } from "../../test/session";
 import { Bus } from "../bus";
 import { openDb } from "../db/db";
 import { DeviceManager } from "../devices/manager";
@@ -46,19 +47,24 @@ beforeEach(async () => {
 		"<!doctype html><div id=root></div>",
 	);
 	writeFileSync(join(webDir, "assets", "main-abc123.js"), "console.log(1)");
-	app = createApp({
-		inventory: new Inventory(db),
-		devices: manager,
-		events,
-		messages: {
-			store: new MessageStore(db),
-			bus: new Bus(),
-			attachmentsDir: join(webDir, "attachments"),
-		},
-		webDir,
-		version: "test",
-		heartbeatMs: 50,
-	});
+	const session = testSession(db);
+	app = signedIn(
+		createApp({
+			auth: session.auth,
+			inventory: new Inventory(db),
+			devices: manager,
+			events,
+			messages: {
+				store: new MessageStore(db),
+				bus: new Bus(),
+				attachmentsDir: join(webDir, "attachments"),
+			},
+			webDir,
+			version: "test",
+			heartbeatMs: 50,
+		}),
+		session.cookie,
+	);
 	manager.start();
 	adb.send((await recordedTrackLists())[0] ?? []);
 	for (let i = 0; i < 200 && !manager.get(B30)?.healthAt; i++)
@@ -89,8 +95,17 @@ const call = (
 const json = async <T>(response: Response | Promise<Response>): Promise<T> =>
 	(await response).json() as Promise<T>;
 
-test("healthz summarizes adb and phones", async () => {
-	const response = await call("GET", "/healthz");
+test("healthz says only whether adb is reachable, without a session", async () => {
+	const response = await call("GET", "/healthz", undefined, { cookie: "" });
+	expect(response.status).toBe(200);
+	expect(await response.json()).toEqual({ ok: true });
+});
+
+test("health summarizes adb and phones for a signed-in user", async () => {
+	expect(
+		(await call("GET", "/api/v1/health", undefined, { cookie: "" })).status,
+	).toBe(401);
+	const response = await call("GET", "/api/v1/health");
 	expect(response.status).toBe(200);
 	expect(await response.json()).toEqual({
 		ok: true,
@@ -155,13 +170,10 @@ test("phones show inventory joined with live state", async () => {
 	expect((await call("GET", "/api/v1/phones/NOPE")).status).toBe(404);
 });
 
-test("editing a phone records the Tailscale login", async () => {
-	const response = await call(
-		"PATCH",
-		`/api/v1/phones/${B30}`,
-		{ location: "A3" },
-		{ "Tailscale-User-Login": "owner@example.com" },
-	);
+test("editing a phone records who signed in", async () => {
+	const response = await call("PATCH", `/api/v1/phones/${B30}`, {
+		location: "A3",
+	});
 	expect(response.status).toBe(200);
 	const phone = (await response.json()) as PhoneView;
 	expect(phone.location).toBe("A3");
@@ -217,12 +229,9 @@ test("numbers: detected, overridden by hand, conflicts, and cleared", async () =
 });
 
 test("a number's note is edited alone and shows wherever the number does", async () => {
-	const response = await call(
-		"PATCH",
-		"/api/v1/numbers/+15125550101",
-		{ note: "Facebook ad, blue couch" },
-		{ "Tailscale-User-Login": "owner@example.com" },
-	);
+	const response = await call("PATCH", "/api/v1/numbers/+15125550101", {
+		note: "Facebook ad, blue couch",
+	});
 	expect(response.status).toBe(200);
 	expect(await response.json()).toMatchObject({
 		e164: "+15125550101",

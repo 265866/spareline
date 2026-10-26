@@ -6,13 +6,13 @@ spareline turns old Android phones plugged into a small Linux host, such as a Ra
 
 It shows every phone the host's adb server sees, live: model, Android version, battery, temperature, per-SIM service and signal, whether mobile data is off, IMEIs, ICCIDs, and each SIM's number. Each number carries a free-text note, such as what the line is for. Every incoming text is copied from the phones into the database within seconds and is listed per number and in one log across numbers, live. **Screens** shows each phone's live screen with remote control (see below).
 
-There is no login. Anyone who can reach the server can use the site and the API, so the server binds `127.0.0.1` and should be reached only through a private network, such as `tailscale serve` on a tailnet. When Tailscale Serve passes `Tailscale-User-Login`, inventory edits record it.
+Everything but the sign-in page needs an account. Accounts are made on the server (`bun src/cli.ts users add NAME`, see [Accounts](#accounts)); a signed-in browser keeps an HttpOnly session cookie for 30 days from its last use. The server binds `127.0.0.1` by default; put it behind a reverse proxy that adds HTTPS, such as `tailscale serve` or Caddy, before you reach it from other machines.
 
 ## Use it
 
 - Web: `/` on the server (after deploy, see below).
 - API docs: `/api/docs` (OpenAPI JSON at `/api/docs/json`).
-- Health: `/healthz` returns `{ ok, adbReachable, phonesOnline, phonesOffline, alerts, version }`. `ok` is true when the adb server is reachable; `alerts` counts open alerts.
+- Health: `/healthz` returns `{ ok }` without signing in, for container and proxy health checks; `ok` is true when the adb server is reachable. Signed in, `/api/v1/health` adds `{ adbReachable, phonesOnline, phonesOffline, alerts, version }`; `alerts` counts open alerts.
 
 ### Texts
 
@@ -36,7 +36,7 @@ A phone that shows **Needs approval** is waiting for someone to tap **Allow** on
 
 **Screens** lists every phone with its state and numbers; nothing streams until you open one. An open phone shows its screen live at native resolution and up to 30 fps, with full control: click or drag to touch, scroll to swipe, type once the screen has focus (paste works), and use **Back**, **Home**, and **Recents**. The phone's own display stays dark while someone watches. Video needs WebCodecs, so use a current Chrome, Edge, or Safari over HTTPS or `localhost`.
 
-The server runs [scrcpy-server](https://github.com/Genymobile/scrcpy) 3.3.3 (`vendor/`) on a phone only while someone watches it, and stops it 30 seconds after the last viewer leaves. scrcpy keeps the phone awake during a session and restores `stay_on_while_plugged_in` afterwards. `GET /api/v1/screens` lists running sessions. Each opened screen is recorded in `control_sessions` with the Tailscale login and counts of inputs and typed texts, never the text itself.
+The server runs [scrcpy-server](https://github.com/Genymobile/scrcpy) 3.3.3 (`vendor/`) on a phone only while someone watches it, and stops it 30 seconds after the last viewer leaves. scrcpy keeps the phone awake during a session and restores `stay_on_while_plugged_in` afterwards. `GET /api/v1/screens` lists running sessions. Each opened screen is recorded in `control_sessions` with the signed-in user and counts of inputs and typed texts, never the text itself.
 
 ### Phone health and rules
 
@@ -72,6 +72,21 @@ On the Phones page, a phone that passes every rule shows **Policy OK**; otherwis
 Whatever the profile, every command the app runs on a phone passes a guard that refuses anything that could turn a radio or data on. The two POST routes accept only requests another site cannot make: `Content-Type: application/json` (an empty `{}` body is fine) or `X-Spareline: 1`, and never `Sec-Fetch-Site: cross-site`.
 
 `bun scripts/policy-check.ts SERIAL PROFILE` prints every rule's state for one phone without changing anything.
+
+### Accounts
+
+Accounts are managed on the server, where the database is:
+
+```sh
+bun src/cli.ts users add NAME             # prints a generated password, once
+bun src/cli.ts users list
+bun src/cli.ts users reset-password NAME  # prints a new one and signs NAME out everywhere
+bun src/cli.ts users remove NAME
+```
+
+In the container, prefix them with `podman exec spareline`. Anyone signed in can change their own password on the **Settings** page (at least 12 characters); that signs out their other browsers. Passwords are stored as argon2id hashes and sessions as SHA-256 hashes of their tokens. After 10 failed sign-ins for one name in 15 minutes, further attempts for that name are refused for a while. When a session ends (signing out, a password change, `reset-password`, or `remove`), its open event streams and screens close too, at once or, for changes made with the CLI, within 5 seconds. Inventory edits and screen sessions record who made them.
+
+Requests that change something must be JSON (or carry `X-Spareline: 1`), so a page on another site cannot make them in a signed-in browser; the session cookie is `SameSite=Strict`, and `Secure` when the request came over HTTPS (directly or with `X-Forwarded-Proto: https` from the proxy).
 
 ## Develop
 

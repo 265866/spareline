@@ -17,6 +17,7 @@ import {
 } from "@yume-chan/scrcpy-decoder-webcodecs";
 import { ReadableStream, type WritableStream } from "@yume-chan/stream-extra";
 import type { ScreenMessage } from "../src/screens/manager";
+import { SIGNED_OUT_EVENT } from "./api";
 
 export type StreamPhase =
 	| "connecting"
@@ -60,6 +61,8 @@ export type ScreenStreamDeps = {
 	// Whether the page is a secure context, for the unsupported-browser
 	// message.
 	page(): { isSecureContext: boolean };
+	// The server closed the screen because the session ended.
+	signedOut(): void;
 };
 
 // Only frame parsing and control serialization depend on these; they match
@@ -100,6 +103,7 @@ const browserDeps: ScreenStreamDeps = {
 		),
 	schedule: (run, ms) => setTimeout(run, ms),
 	page: () => window,
+	signedOut: () => window.dispatchEvent(new Event(SIGNED_OUT_EVENT)),
 	watchPage(hide, show) {
 		const onShow = (event: PageTransitionEvent) => {
 			if (event.persisted) show();
@@ -121,6 +125,10 @@ export function unsupportedMessage(page: { isSecureContext: boolean }): string {
 		? "This browser can't play the video. Open this site in a current Chrome, Edge, or Safari."
 		: "This browser can't play the video over plain HTTP. Open this site through its HTTPS tailnet address in Chrome, Edge, or Safari.";
 }
+
+// The relay's close code for a viewer whose session ended
+// (src/screens/routes.ts); retrying would only be refused.
+const CLOSE_SIGNED_OUT = 4003;
 
 // Reconnect delays double from 1 s up to this.
 const MAX_RETRY_MS = 30_000;
@@ -392,6 +400,11 @@ export class ScreenStream {
 				message: "This screen's video could not be decoded.",
 				stopped: true,
 			});
+			return;
+		}
+		if (event.code === CLOSE_SIGNED_OUT) {
+			this.update({ phase: "failed", message: "Signed out", stopped: true });
+			this.deps.signedOut();
 			return;
 		}
 		let delay = Math.min(MAX_RETRY_MS, 1_000 * 2 ** this.attempts++);

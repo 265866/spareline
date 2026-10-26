@@ -38,6 +38,12 @@ ssh HOST 'bash ~/services/spareline/install.sh && bash ~/services/spareline/veri
 
 Then plug in the phones with USB debugging on. Each one asks "Allow USB debugging?" for this host's new adb key: tick **Always allow from this computer** and tap **Allow**. Updates check the phones too (see below), so keep at least `SMOKE_MIN_PHONES` of them online, or set it to 0 in `deploy.env`.
 
+Then create an account to sign in with. It prints a generated password once:
+
+```sh
+ssh HOST 'podman exec spareline bun src/cli.ts users add NAME'
+```
+
 The app listens only on the host's loopback. Reach it through a reverse proxy that adds HTTPS, for example:
 
 - [Tailscale Serve](https://tailscale.com/kb/1312/serve), to reach it from your tailnet: `sudo tailscale serve --bg --https=443 http://127.0.0.1:8740`. Without `sudo`, the account must be a Tailscale operator (`sudo tailscale set --operator=USER`).

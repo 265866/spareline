@@ -4,6 +4,7 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { FakePhone } from "../../test/fake-scrcpy";
+import { testSession } from "../../test/session";
 import { createApp } from "../api/app";
 import { Bus } from "../bus";
 import { openDb } from "../db/db";
@@ -13,7 +14,7 @@ import { silent } from "../log";
 import { MessageStore } from "../sms/store";
 import { ScreenManager } from "./manager";
 import { MAX_VIEWER_MESSAGE_BYTES } from "./protocol";
-import { sameOrigin } from "./routes";
+import { CLOSE_SIGNED_OUT, sameOrigin } from "./routes";
 
 // The screen routes inside the real app, over a real WebSocket. The phone
 // side is the stand-in from test/fake-scrcpy.ts (see there for why).
@@ -25,6 +26,9 @@ let screens: ScreenManager;
 let server: ReturnType<ReturnType<typeof createApp>["listen"]>;
 let base: string;
 let webDir: string;
+// The signed-in viewer's session cookie.
+let cookie: string;
+let session: ReturnType<typeof testSession>;
 
 beforeEach(() => {
 	db = openDb(":memory:");
@@ -44,7 +48,10 @@ beforeEach(() => {
 	// A built UI, so the SPA's catch-all route is present as in production.
 	webDir = mkdtempSync(join(tmpdir(), "spareline-web-"));
 	writeFileSync(join(webDir, "index.html"), "<!doctype html>");
+	session = testSession(db, "someone@example.com");
+	cookie = session.cookie;
 	server = createApp({
+		auth: session.auth,
 		inventory: new Inventory(db),
 		devices: phone as unknown as Devices,
 		events: new Bus(),
@@ -73,7 +80,7 @@ function connect(path: string, headers: Record<string, string> = {}) {
 	const received: Received = { text: [], binary: [] };
 	// Bun's WebSocket client accepts headers, which browsers do not.
 	const ws = new WebSocket(`ws://${base}${path}`, {
-		headers,
+		headers: { cookie, ...headers },
 	} as unknown as string[]);
 	ws.binaryType = "arraybuffer";
 	ws.onmessage = (event) => {
@@ -96,9 +103,7 @@ async function until(check: () => boolean, ms = 2_000): Promise<void> {
 }
 
 test("a viewer gets hello, then scrcpy packets as binary frames", async () => {
-	const { ws, received } = connect(`/api/v1/phones/${SERIAL}/screen`, {
-		"Tailscale-User-Login": "someone@example.com",
-	});
+	const { ws, received } = connect(`/api/v1/phones/${SERIAL}/screen`);
 	await until(() => received.binary.length > 2);
 	expect(received.text).toContainEqual(
 		expect.objectContaining({ t: "hello", width: 216, height: 480 }),
@@ -118,7 +123,7 @@ test("a viewer gets hello, then scrcpy packets as binary frames", async () => {
 	expect(phone.servers[0]?.control).not.toContainEqual(new Uint8Array([10, 1]));
 
 	const sessions = (await (
-		await fetch(`http://${base}/api/v1/screens`)
+		await fetch(`http://${base}/api/v1/screens`, { headers: { cookie } })
 	).json()) as { sessions: unknown[] };
 	expect(sessions.sessions).toEqual([
 		expect.objectContaining({
@@ -154,6 +159,7 @@ describe("Origin", () => {
 				Upgrade: "websocket",
 				"Sec-WebSocket-Key": "dGhlIHNhbXBsZSBub25jZQ==",
 				"Sec-WebSocket-Version": "13",
+				cookie,
 				...headers,
 			},
 		});
@@ -209,7 +215,39 @@ test("an offline phone's screen closes with 4001 and a reason", async () => {
 });
 
 test("a plain GET, without a WebSocket upgrade, starts nothing", async () => {
-	const response = await fetch(`http://${base}/api/v1/phones/${SERIAL}/screen`);
+	const response = await fetch(
+		`http://${base}/api/v1/phones/${SERIAL}/screen`,
+		{ headers: { cookie } },
+	);
 	expect(response.ok).toBe(false);
 	expect(phone.servers).toEqual([]);
+});
+
+test("a screen needs a session: without one the upgrade is refused with 401", async () => {
+	const { closed } = connect(`/api/v1/phones/${SERIAL}/screen`, {
+		cookie: "",
+	});
+	expect((await closed).code).not.toBe(1000);
+	const response = await fetch(
+		`http://${base}/api/v1/phones/${SERIAL}/screen`,
+		{
+			headers: {
+				Connection: "Upgrade",
+				Upgrade: "websocket",
+				"Sec-WebSocket-Key": "dGhlIHNhbXBsZSBub25jZQ==",
+				"Sec-WebSocket-Version": "13",
+			},
+		},
+	);
+	expect(response.status).toBe(401);
+	expect(phone.servers).toEqual([]);
+});
+
+test("a viewer whose session ends is closed with 4003", async () => {
+	const { received, closed } = connect(`/api/v1/phones/${SERIAL}/screen`);
+	await until(() => received.text.some((m) => m.t === "hello"));
+	session.auth.removeUser(session.name);
+	const event = await closed;
+	expect(event.code).toBe(CLOSE_SIGNED_OUT);
+	expect(event.reason).toBe("signed out");
 });
