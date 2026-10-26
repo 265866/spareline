@@ -1,0 +1,8 @@
+[Unit]
+Description=Back up the spareline database and adb key
+
+[Service]
+Type=oneshot
+ExecStart=%h/services/spareline/backup.sh
+TimeoutStartSec=45min
+UMask=0077
