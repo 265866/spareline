@@ -1,0 +1,33 @@
+import { z } from "zod";
+import { parseEndpoint } from "./adb/client";
+
+const Env = z.object({
+	HOST: z.string().default("127.0.0.1"),
+	PORT: z.coerce.number().int().min(1).max(65535).default(8740),
+	ADB_SERVER: z
+		.string()
+		.default("127.0.0.1:5037")
+		.transform((value, context) => {
+			try {
+				return parseEndpoint(value);
+			} catch (error) {
+				context.addIssue({ code: "custom", message: String(error) });
+				return z.NEVER;
+			}
+		}),
+	DATA_DIR: z.string().default("data"),
+	// Where this instance runs; stored on every phone for a later multi-host view.
+	SITE: z.string().trim().min(1).default("local"),
+	// Seconds between health probes of each online phone.
+	HEALTH_INTERVAL_S: z.coerce.number().int().min(5).max(3600).default(60),
+	WEB_DIR: z.string().default("dist/web"),
+});
+
+type Config = z.infer<typeof Env>;
+
+export function parseEnv(env: Record<string, string | undefined>): Config {
+	const result = Env.safeParse(env);
+	if (!result.success)
+		throw new Error(`invalid environment:\n${z.prettifyError(result.error)}`);
+	return result.data;
+}
