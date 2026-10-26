@@ -1,4 +1,9 @@
-import { Hash, MessageSquare, Smartphone } from "lucide-react";
+import {
+	Hash,
+	MessageSquare,
+	MonitorSmartphone,
+	Smartphone,
+} from "lucide-react";
 import type { ReactNode } from "react";
 import { type StatusView, useDeviceEvents, useResource } from "./api";
 import { Badge, Empty } from "./components/ui";
@@ -6,12 +11,14 @@ import { ago, EVENT_LABEL } from "./format";
 import { MessagesPage } from "./pages/Messages";
 import { NumberPage, NumbersPage } from "./pages/Numbers";
 import { PhonesPage } from "./pages/Phones";
+import { ScreenFocusPage, ScreensPage } from "./pages/Screens";
 import { linkProps, useLocation } from "./router";
 
 const NAV = [
 	{ path: "/", label: "Phones", icon: Smartphone },
 	{ path: "/numbers", label: "Numbers", icon: Hash },
 	{ path: "/messages", label: "Messages", icon: MessageSquare },
+	{ path: "/screens", label: "Screens", icon: MonitorSmartphone },
 ] as const;
 
 export function App() {
@@ -21,6 +28,7 @@ export function App() {
 	const status = useResource<StatusView>("/status", 15_000);
 	const adb = status.data?.adb;
 	const numberMatch = /^\/numbers\/([^/]+)$/.exec(path);
+	const screenMatch = /^\/screens\/([^/]+)$/.exec(path);
 
 	let page: ReactNode;
 	if (path === "/" || path === "/phones") page = <PhonesPage />;
@@ -30,6 +38,9 @@ export function App() {
 		page = <NumbersPage search={url.searchParams.get("q")} />;
 	else if (path === "/messages")
 		page = <MessagesPage search={url.searchParams.get("q")} />;
+	else if (screenMatch?.[1])
+		page = <ScreenFocusPage serial={decodeURIComponent(screenMatch[1])} />;
+	else if (path === "/screens") page = <ScreensPage />;
 	else page = <Empty icon={<Smartphone size={32} />} title="Page not found" />;
 
 	return (

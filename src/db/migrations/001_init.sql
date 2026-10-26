@@ -152,3 +152,19 @@ CREATE TABLE ingest_cursors (
 	last_provider_id INTEGER NOT NULL,
 	PRIMARY KEY (phone_id, provider)
 );
+
+-- One row per focus viewer of a phone's screen (the view that can send
+-- input). Inputs and typed texts are counted; text content is never stored.
+-- `rejected` counts control messages the relay refused. ended_at stays null
+-- if the server stopped without closing the viewer.
+CREATE TABLE control_sessions (
+	id INTEGER PRIMARY KEY,
+	phone_id INTEGER NOT NULL REFERENCES phones (id),
+	login TEXT,
+	started_at TEXT NOT NULL,
+	ended_at TEXT,
+	inputs INTEGER NOT NULL DEFAULT 0,
+	texts INTEGER NOT NULL DEFAULT 0,
+	rejected INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX control_sessions_phone ON control_sessions (phone_id, started_at);

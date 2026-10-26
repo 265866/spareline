@@ -12,6 +12,9 @@ import {
 	NotFoundError,
 } from "../inventory/store";
 import type { DeviceEventRow } from "../inventory/sync";
+import type { ScreenManager } from "../screens/manager";
+import { MAX_VIEWER_MESSAGE_BYTES } from "../screens/protocol";
+import { screenRoutes } from "../screens/routes";
 import { BadRequestError } from "./errors";
 import { type MessageOptions, messageRoutes } from "./messages";
 import {
@@ -43,6 +46,8 @@ export type AppOptions = {
 	version: string;
 	// Interval of SSE keep-alive comments, so proxies keep idle streams open.
 	heartbeatMs?: number;
+	// Screen streaming; null serves no screen routes.
+	screens?: ScreenManager | null;
 };
 
 // Tailscale Serve sets this header to the tailnet login of the person making
@@ -260,7 +265,12 @@ export function createApp(options: AppOptions) {
 			},
 		);
 
-	const app = new Elysia()
+	if (options.screens) api.use(screenRoutes(options.screens));
+
+	// Bun applies WebSocket limits server-wide, so they are set on the root.
+	const app = new Elysia({
+		websocket: { maxPayloadLength: MAX_VIEWER_MESSAGE_BYTES },
+	})
 		.use(
 			openapi({
 				path: "/api/docs",
