@@ -247,6 +247,13 @@ test("a packet header claiming more than 8 MiB is a corrupt stream", async () =>
 	await expect(reader.readPacket()).rejects.toThrow("exceeds");
 });
 
+test("the browser splits typed text at the relay's limit", async () => {
+	const { MAX_TEXT_BYTES: browserLimit } = await import(
+		"../../web/screen-stream"
+	);
+	expect(browserLimit).toBe(MAX_TEXT_BYTES);
+});
+
 test("the wakefulness read parses what the B30 printed, awake and dozing", async () => {
 	// Recorded through adb exec: the line, then the error dumpsys prints when
 	// grep -m1 closes the pipe.
