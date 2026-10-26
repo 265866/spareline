@@ -1,0 +1,2 @@
+  mWakefulness=Awake
+Failed to write while dumping service power: Broken pipe

@@ -1,0 +1,2 @@
+  mWakefulness=Dozing
+Failed to write while dumping service power: Broken pipe
