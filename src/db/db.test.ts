@@ -27,6 +27,7 @@ const EXPECTED_TABLES = [
 	"attachments",
 	"control_sessions",
 	"device_events",
+	"health_5m",
 	"ingest_cursors",
 	"inventory_edits",
 	"messages",
