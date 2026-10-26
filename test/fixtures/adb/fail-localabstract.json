@@ -1,0 +1,25 @@
+{
+	"description": "localabstract: to a socket that does not exist",
+	"recordedAt": "2026-10-22T06:23:16.497Z",
+	"outcome": "error: AdbError: localabstract:sl-no-such-socket: closed",
+	"connections": [
+		[
+			{
+				"from": "client",
+				"hex": "30303164686f73743a7472616e73706f72743a53504152454c494e453030303031"
+			},
+			{
+				"from": "server",
+				"hex": "4f4b4159"
+			},
+			{
+				"from": "client",
+				"hex": "303031666c6f63616c61627374726163743a736c2d6e6f2d737563682d736f636b6574"
+			},
+			{
+				"from": "server",
+				"hex": "4641494c30303036636c6f736564"
+			}
+		]
+	]
+}
