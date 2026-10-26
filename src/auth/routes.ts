@@ -4,6 +4,7 @@ import { ApiError } from "../api/schema";
 import {
 	type Auth,
 	AuthError,
+	type KeyScope,
 	MIN_PASSWORD_LENGTH,
 	type Principal,
 	SESSION_COOKIE,
@@ -12,8 +13,8 @@ import {
 import { LoginLimiter } from "./limiter";
 
 // Paths anyone may request. Everything else under /api/ needs a signed-in
-// session; the web app's pages and assets are public, so the sign-in page
-// can load.
+// session or an API key; the web app's pages and assets are public, so the
+// sign-in page can load.
 const PUBLIC_API = new Set([
 	"/api/docs",
 	"/api/docs/json",
@@ -34,7 +35,24 @@ export function principalOf(request: Request): Principal | null {
 
 // The name edits and screen sessions are recorded under.
 export function loginOf(request: Request): string | null {
-	return principalOf(request)?.user.name ?? null;
+	const principal = principalOf(request);
+	if (!principal) return null;
+	return principal.kind === "key"
+		? `${principal.user.name} (key ${principal.keyName})`
+		: principal.user.name;
+}
+
+// Routes only a signed-in browser may use: a leaked key must not be able to
+// mint more keys or change a password.
+const SESSION_ONLY = ["/api/v1/auth/", "/api/v1/api-keys"];
+
+// What a read-only key may do: requests that change nothing. A screen's
+// WebSocket can send input, so it is not one of them.
+function readOnly(request: Request): boolean {
+	return (
+		(request.method === "GET" || request.method === "HEAD") &&
+		request.headers.get("upgrade")?.toLowerCase() !== "websocket"
+	);
 }
 
 // Aborts when the request's session ends (signed out, password changed,
@@ -94,8 +112,10 @@ function sessionCookie(request: Request, token: string, maxAge: number) {
 	].join("; ");
 }
 
-// Runs on every request, before routing: resolves the principal and turns
-// away protected requests without one, WebSocket upgrades included.
+// Runs on every request, before routing: resolves the principal (an
+// `Authorization: Bearer` API key, else the session cookie) and turns away
+// protected requests without one, WebSocket upgrades included, and what a
+// key's scope does not allow.
 export function guard(auth: Auth) {
 	return ({
 		request,
@@ -106,25 +126,46 @@ export function guard(auth: Auth) {
 	}) => {
 		const path = new URL(request.url).pathname;
 		if (!path.startsWith("/api/")) return;
+		const bearer = /^Bearer\s+(\S+)$/i.exec(
+			request.headers.get("authorization") ?? "",
+		)?.[1];
 		const token = cookie(request, SESSION_COOKIE);
 		// A used session is extended on the server; the cookie gets the same
 		// new lifetime, so an active browser is never signed out.
-		const principal = token
-			? auth.session(token, () => {
-					set.headers["set-cookie"] = sessionCookie(
-						request,
-						token,
-						SESSION_DAYS * 86_400,
-					);
-				})
-			: null;
-		if (principal) {
-			principals.set(request, principal);
-			auths.set(request, auth);
+		const principal =
+			bearer !== undefined
+				? auth.keyPrincipal(bearer)
+				: token
+					? auth.session(token, () => {
+							set.headers["set-cookie"] = sessionCookie(
+								request,
+								token,
+								SESSION_DAYS * 86_400,
+							);
+						})
+					: null;
+		if (!principal) {
+			if (PUBLIC_API.has(path)) return;
+			set.status = 401;
+			return {
+				error:
+					bearer === undefined ? "sign in first" : "unknown or revoked API key",
+			};
 		}
-		if (principal || PUBLIC_API.has(path)) return;
-		set.status = 401;
-		return { error: "sign in first" };
+		principals.set(request, principal);
+		auths.set(request, auth);
+		if (principal.kind !== "key") return;
+		if (SESSION_ONLY.some((prefix) => path.startsWith(prefix))) {
+			set.status = 403;
+			return {
+				error:
+					"API keys cannot manage keys or passwords; sign in with a browser",
+			};
+		}
+		if (principal.scope === "read" && !readOnly(request)) {
+			set.status = 403;
+			return { error: "this API key can only read" };
+		}
 	};
 }
 
@@ -280,4 +321,110 @@ export function authRoutes(auth: Auth, limiter = new LoginLimiter()) {
 				},
 			},
 		);
+}
+
+const ApiKeyView = z.object({
+	id: z.number().int(),
+	user: z.string(),
+	name: z.string(),
+	scope: z.enum(["read", "full"]),
+	prefix: z.string().describe("The key's first characters"),
+	createdAt: z.string(),
+	lastUsedAt: z.string().nullable(),
+	revokedAt: z.string().nullable(),
+});
+
+// Listing, creating, and revoking API keys; signed-in browsers only.
+export function keyRoutes(auth: Auth) {
+	const owner = (request: Request) => {
+		const principal = principalOf(request);
+		if (principal?.kind !== "session")
+			throw new Error("the guard let a non-session request in");
+		return principal.user;
+	};
+	return new Elysia({ prefix: "/api/v1/api-keys" })
+		.get("/", () => ({ keys: auth.listKeys() }), {
+			response: { 200: z.object({ keys: z.array(ApiKeyView) }) },
+			detail: {
+				summary: "List API keys",
+				description:
+					"Every user's keys, revoked ones included. Never the keys themselves.",
+				tags: ["auth"],
+			},
+		})
+		.post(
+			"/",
+			({ request, body, set }) => {
+				try {
+					const { key, apiKey } = auth.createKey(
+						owner(request).id,
+						body.name,
+						body.scope as KeyScope,
+					);
+					return { key, apiKey };
+				} catch (error) {
+					if (!(error instanceof AuthError)) throw error;
+					set.status = 400;
+					return { error: error.message };
+				}
+			},
+			{
+				beforeHandle: jsonOnly,
+				body: z.object({
+					name: z.string().max(64),
+					scope: z.enum(["read", "full"]),
+				}),
+				response: {
+					200: z.object({
+						key: z.string().describe("Shown once: store it now"),
+						apiKey: ApiKeyView,
+					}),
+					400: ApiError,
+					415: ApiError,
+				},
+				detail: {
+					summary: "Create an API key",
+					description:
+						"Send the key as `Authorization: Bearer <key>`. A read key may only make GET requests (texts, events, inventory) and cannot open a screen; a full key may do everything a signed-in user can, except manage keys and passwords.",
+					tags: ["auth"],
+				},
+			},
+		)
+		.delete(
+			"/:id",
+			({ params, set }) => {
+				try {
+					return auth.revokeKey(params.id);
+				} catch (error) {
+					if (!(error instanceof AuthError)) throw error;
+					set.status = 404;
+					return { error: error.message };
+				}
+			},
+			{
+				beforeHandle: sameSiteDelete,
+				params: z.object({ id: z.coerce.number().int() }),
+				response: { 200: ApiKeyView, 403: ApiError, 404: ApiError },
+				detail: {
+					summary: "Revoke an API key",
+					description: "Requests with it are refused from now on.",
+					tags: ["auth"],
+				},
+			},
+		);
+}
+
+// A DELETE carries no body to prove it is not cross-site; the session cookie
+// is SameSite=Strict, and Sec-Fetch-Site turns away the rest.
+function sameSiteDelete({
+	request,
+	set,
+}: {
+	request: Request;
+	set: { status?: number | string };
+}) {
+	if (request.headers.get("sec-fetch-site") === "cross-site") {
+		set.status = 403;
+		return { error: "cross-site request refused" };
+	}
 }

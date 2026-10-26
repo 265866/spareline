@@ -337,3 +337,136 @@ test("a session removed by another process ends open streams within seconds", as
 		await server.stop(true);
 	}
 }, 10_000);
+
+const createKey = async (
+	session: string,
+	name: string,
+	scope: "read" | "full",
+) => {
+	const response = await call("POST", "/api/v1/api-keys", {
+		body: { name, scope },
+		headers: { cookie: session },
+	});
+	expect(response.status).toBe(200);
+	return ((await response.json()) as { key: string }).key;
+};
+const bearer = (key: string) => ({ authorization: `Bearer ${key}` });
+
+test("an API key is shown once, listed only by its prefix, and opens the API", async () => {
+	const { session } = await signIn();
+	const key = await createKey(session, "texts script", "full");
+	expect(key).toMatch(/^sl_[\w-]{43}$/);
+	const list = await call("GET", "/api/v1/api-keys", {
+		headers: { cookie: session },
+	});
+	const { keys } = (await list.json()) as {
+		keys: { name: string; prefix: string; user: string; scope: string }[];
+	};
+	expect(keys).toMatchObject([
+		{
+			name: "texts script",
+			user: "alice",
+			scope: "full",
+			prefix: key.slice(0, 9),
+		},
+	]);
+	expect(JSON.stringify(keys)).not.toContain(key.slice(9));
+	expect(
+		(await call("GET", "/api/v1/phones", { headers: bearer(key) })).status,
+	).toBe(200);
+	expect(
+		(await call("GET", "/api/v1/messages", { headers: bearer(key) })).status,
+	).toBe(200);
+	expect(
+		db.query("SELECT last_used_at IS NOT NULL AS used FROM api_keys").get(),
+	).toEqual({ used: 1 });
+});
+
+test("a read key may only read; neither kind may manage keys or passwords", async () => {
+	const { session } = await signIn();
+	const read = await createKey(session, "reader", "read");
+	const full = await createKey(session, "writer", "full");
+	const readOnly = { "content-type": "application/json", ...bearer(read) };
+	for (const route of app.routes) {
+		if (
+			!route.path.startsWith("/api/v1/") ||
+			route.path.startsWith("/api/v1/auth/")
+		)
+			continue;
+		const path = route.path.replace(/:\w+/g, "x").replace("*", "x");
+		const response = await call(
+			route.method === "WS" ? "GET" : route.method,
+			path,
+			{
+				headers:
+					route.method === "WS"
+						? {
+								...bearer(read),
+								Connection: "Upgrade",
+								Upgrade: "websocket",
+								"Sec-WebSocket-Key": "dGhlIHNhbXBsZSBub25jZQ==",
+								"Sec-WebSocket-Version": "13",
+							}
+						: readOnly,
+			},
+		);
+		const refused =
+			route.method !== "GET" || route.path.startsWith("/api/v1/api-keys");
+		expect([route.method, route.path, response.status === 403]).toEqual([
+			route.method,
+			route.path,
+			refused,
+		]);
+	}
+	for (const key of [read, full]) {
+		const mint = await call("POST", "/api/v1/api-keys", {
+			body: { name: "more", scope: "full" },
+			headers: bearer(key),
+		});
+		expect(mint.status).toBe(403);
+		const password = await call("POST", "/api/v1/auth/password", {
+			body: { current: "x", next: "a long new password" },
+			headers: bearer(key),
+		});
+		expect(password.status).toBe(403);
+	}
+	// A full key may change things; edits say which key made them.
+	const edit = await call("PATCH", "/api/v1/numbers/1", {
+		body: { note: "x" },
+		headers: bearer(full),
+	});
+	expect(edit.status).toBe(404);
+});
+
+test("a revoked or unknown key is refused, even next to a valid session cookie", async () => {
+	const { session } = await signIn();
+	const key = await createKey(session, "old", "full");
+	const { keys } = (await (
+		await call("GET", "/api/v1/api-keys", { headers: { cookie: session } })
+	).json()) as { keys: { id: number }[] };
+	const revoke = await call("DELETE", `/api/v1/api-keys/${keys[0]?.id}`, {
+		headers: { cookie: session },
+	});
+	expect(revoke.status).toBe(200);
+	expect(await revoke.json()).toMatchObject({ name: "old" });
+	const refused = await call("GET", "/api/v1/phones", {
+		headers: { ...bearer(key), cookie: session },
+	});
+	expect(refused.status).toBe(401);
+	expect(await refused.json()).toEqual({ error: "unknown or revoked API key" });
+	expect(
+		(await call("GET", "/api/v1/phones", { headers: bearer("sl_nope") }))
+			.status,
+	).toBe(401);
+	expect(
+		(
+			await call("DELETE", "/api/v1/api-keys/999", {
+				headers: { cookie: session },
+			})
+		).status,
+	).toBe(404);
+	const crossSite = await call("DELETE", `/api/v1/api-keys/${keys[0]?.id}`, {
+		headers: { cookie: session, "sec-fetch-site": "cross-site" },
+	});
+	expect(crossSite.status).toBe(403);
+});

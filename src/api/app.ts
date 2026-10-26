@@ -4,7 +4,13 @@ import { openapi } from "@elysiajs/openapi";
 import { Elysia } from "elysia";
 import { z } from "zod";
 import type { Auth } from "../auth/auth";
-import { authRoutes, guard, loginOf, revocation } from "../auth/routes";
+import {
+	authRoutes,
+	guard,
+	keyRoutes,
+	loginOf,
+	revocation,
+} from "../auth/routes";
 import type { Bus } from "../bus";
 import { toE164 } from "../devices/identifiers";
 import type { Devices } from "../devices/manager";
@@ -321,7 +327,7 @@ export function createApp(options: AppOptions) {
 						title: "spareline",
 						version: options.version,
 						description:
-							"Phones on USB, their numbers, and every text they receive. Every route except sign-in needs a session: sign in with POST /api/v1/auth/login, which sets the session cookie.",
+							"Phones on USB, their numbers, and every text they receive. Every route except sign-in needs a session or an API key: sign in with POST /api/v1/auth/login, which sets the session cookie, or send an API key (Settings > API keys) as `Authorization: Bearer <key>`.",
 					},
 					components: {
 						securitySchemes: {
@@ -330,9 +336,15 @@ export function createApp(options: AppOptions) {
 								in: "cookie",
 								name: "spareline_session",
 							},
+							apiKey: {
+								type: "http",
+								scheme: "bearer",
+								description:
+									"An API key from Settings > API keys. A read key may only make GET requests.",
+							},
 						},
 					},
-					security: [{ session: [] }],
+					security: [{ session: [] }, { apiKey: [] }],
 				},
 				mapJsonSchema: { zod: z.toJSONSchema },
 				exclude: { paths: ["/", "/assets/*", "/*"] },
@@ -372,6 +384,7 @@ export function createApp(options: AppOptions) {
 			},
 		})
 		.use(authRoutes(options.auth))
+		.use(keyRoutes(options.auth))
 		.use(api)
 		.use(messageRoutes(inventory, options.messages));
 

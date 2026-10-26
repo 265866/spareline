@@ -27,6 +27,7 @@ let manager: DeviceManager;
 let events: Bus<DeviceEventRow>;
 let app: App;
 let webDir: string;
+let session: ReturnType<typeof testSession>;
 
 beforeEach(async () => {
 	db = openDb(":memory:");
@@ -47,7 +48,7 @@ beforeEach(async () => {
 		"<!doctype html><div id=root></div>",
 	);
 	writeFileSync(join(webDir, "assets", "main-abc123.js"), "console.log(1)");
-	const session = testSession(db);
+	session = testSession(db);
 	app = signedIn(
 		createApp({
 			auth: session.auth,
@@ -409,4 +410,22 @@ test("the SPA is served for client routes, assets are immutable, and paths stay 
 	);
 	expect((await call("GET", "/api/v1/nothing")).status).toBe(404);
 	expect((await call("GET", "/api/docs")).status).toBe(200);
+});
+
+test("an edit made with an API key records the user and the key", async () => {
+	const user = session.auth.findUser(session.name);
+	if (!user) throw new Error("no test user");
+	const { key } = session.auth.createKey(user.id, "inventory script", "full");
+	const response = await call(
+		"PATCH",
+		`/api/v1/phones/${B30}`,
+		{ location: "B1" },
+		{ authorization: `Bearer ${key}`, cookie: "" },
+	);
+	expect(response.status).toBe(200);
+	expect(
+		db
+			.query("SELECT login FROM inventory_edits ORDER BY id DESC LIMIT 1")
+			.get(),
+	).toEqual({ login: "owner@example.com (key inventory script)" });
 });
