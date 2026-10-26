@@ -4,6 +4,7 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { FakePhone } from "../../test/fake-scrcpy";
+import { testSession } from "../../test/session";
 import { createApp } from "../api/app";
 import { Bus } from "../bus";
 import { openDb } from "../db/db";
@@ -25,6 +26,8 @@ let screens: ScreenManager;
 let server: ReturnType<ReturnType<typeof createApp>["listen"]>;
 let base: string;
 let webDir: string;
+// The signed-in viewer's session cookie.
+let cookie: string;
 
 beforeEach(() => {
 	db = openDb(":memory:");
@@ -44,7 +47,10 @@ beforeEach(() => {
 	// A built UI, so the SPA's catch-all route is present as in production.
 	webDir = mkdtempSync(join(tmpdir(), "spareline-web-"));
 	writeFileSync(join(webDir, "index.html"), "<!doctype html>");
+	const session = testSession(db, "someone@example.com");
+	cookie = session.cookie;
 	server = createApp({
+		auth: session.auth,
 		inventory: new Inventory(db),
 		devices: phone as unknown as Devices,
 		events: new Bus(),
@@ -73,7 +79,7 @@ function connect(path: string, headers: Record<string, string> = {}) {
 	const received: Received = { text: [], binary: [] };
 	// Bun's WebSocket client accepts headers, which browsers do not.
 	const ws = new WebSocket(`ws://${base}${path}`, {
-		headers,
+		headers: { cookie, ...headers },
 	} as unknown as string[]);
 	ws.binaryType = "arraybuffer";
 	ws.onmessage = (event) => {
@@ -96,9 +102,7 @@ async function until(check: () => boolean, ms = 2_000): Promise<void> {
 }
 
 test("a viewer gets hello, then scrcpy packets as binary frames", async () => {
-	const { ws, received } = connect(`/api/v1/phones/${SERIAL}/screen`, {
-		"Tailscale-User-Login": "someone@example.com",
-	});
+	const { ws, received } = connect(`/api/v1/phones/${SERIAL}/screen`);
 	await until(() => received.binary.length > 2);
 	expect(received.text).toContainEqual(
 		expect.objectContaining({ t: "hello", width: 216, height: 480 }),
@@ -118,7 +122,7 @@ test("a viewer gets hello, then scrcpy packets as binary frames", async () => {
 	expect(phone.servers[0]?.control).not.toContainEqual(new Uint8Array([10, 1]));
 
 	const sessions = (await (
-		await fetch(`http://${base}/api/v1/screens`)
+		await fetch(`http://${base}/api/v1/screens`, { headers: { cookie } })
 	).json()) as { sessions: unknown[] };
 	expect(sessions.sessions).toEqual([
 		expect.objectContaining({
@@ -154,6 +158,7 @@ describe("Origin", () => {
 				Upgrade: "websocket",
 				"Sec-WebSocket-Key": "dGhlIHNhbXBsZSBub25jZQ==",
 				"Sec-WebSocket-Version": "13",
+				cookie,
 				...headers,
 			},
 		});
@@ -209,7 +214,30 @@ test("an offline phone's screen closes with 4001 and a reason", async () => {
 });
 
 test("a plain GET, without a WebSocket upgrade, starts nothing", async () => {
-	const response = await fetch(`http://${base}/api/v1/phones/${SERIAL}/screen`);
+	const response = await fetch(
+		`http://${base}/api/v1/phones/${SERIAL}/screen`,
+		{ headers: { cookie } },
+	);
 	expect(response.ok).toBe(false);
+	expect(phone.servers).toEqual([]);
+});
+
+test("a screen needs a session: without one the upgrade is refused with 401", async () => {
+	const { closed } = connect(`/api/v1/phones/${SERIAL}/screen`, {
+		cookie: "",
+	});
+	expect((await closed).code).not.toBe(1000);
+	const response = await fetch(
+		`http://${base}/api/v1/phones/${SERIAL}/screen`,
+		{
+			headers: {
+				Connection: "Upgrade",
+				Upgrade: "websocket",
+				"Sec-WebSocket-Key": "dGhlIHNhbXBsZSBub25jZQ==",
+				"Sec-WebSocket-Version": "13",
+			},
+		},
+	);
+	expect(response.status).toBe(401);
 	expect(phone.servers).toEqual([]);
 });

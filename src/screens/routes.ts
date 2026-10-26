@@ -1,6 +1,7 @@
 import type { ServerWebSocket } from "bun";
 import { Elysia } from "elysia";
 import { z } from "zod";
+import { loginOf } from "../auth/routes";
 import { AttachError, type ScreenManager, type ViewerHandle } from "./manager";
 import type { ViewerSink } from "./viewer";
 
@@ -15,14 +16,11 @@ export const ScreenSession = z.object({
 	startedAt: z.string().nullable(),
 });
 
-// Tailscale Serve sets this to the viewer's tailnet login.
-const LOGIN_HEADER = "tailscale-user-login";
-
 // Any page may open a WebSocket to any host, so without this check a page
-// from another site, open in a tailnet user's browser, could watch and
-// control a phone. Browsers always send Origin on a WebSocket, and Tailscale
-// Serve passes it and the original Host through unchanged. Clients without
-// an Origin (scripts) are allowed.
+// from another site, open in a signed-in user's browser, could watch and
+// control a phone. Browsers always send Origin on a WebSocket, and reverse
+// proxies such as Tailscale Serve pass it and the original Host through
+// unchanged. Clients without an Origin (scripts) are allowed.
 export function sameOrigin(
 	origin: string | null,
 	host: string | null,
@@ -79,7 +77,7 @@ export function screenRoutes(screens: ScreenManager) {
 						screens.attach(
 							ws.data.params.serial,
 							sink,
-							ws.data.headers[LOGIN_HEADER] ?? null,
+							loginOf(ws.data.request),
 						),
 					);
 				} catch (error) {

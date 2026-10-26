@@ -6,6 +6,7 @@ import { join } from "node:path";
 import type { FakeAdb } from "../../test/fake-adb";
 import { recordedTrackLists } from "../../test/fake-adb";
 import { fixture } from "../../test/replay-shell";
+import { signedIn, testSession } from "../../test/session";
 import { B30, hex, type PartRead, smsFakeAdb } from "../../test/sms-fake";
 import { Bus } from "../bus";
 import { openDb } from "../db/db";
@@ -64,15 +65,20 @@ beforeEach(async () => {
 		triggerMs: 3_600_000,
 		reconcileMs: 3_600_000,
 	});
-	app = createApp({
-		inventory: new Inventory(db),
-		devices: manager,
-		events,
-		messages: { store, bus: messages, attachmentsDir },
-		webDir: null,
-		version: "test",
-		heartbeatMs: 50,
-	});
+	const session = testSession(db);
+	app = signedIn(
+		createApp({
+			auth: session.auth,
+			inventory: new Inventory(db),
+			devices: manager,
+			events,
+			messages: { store, bus: messages, attachmentsDir },
+			webDir: null,
+			version: "test",
+			heartbeatMs: 50,
+		}),
+		session.cookie,
+	);
 	ingest.start();
 	manager.start();
 	adb.send((await recordedTrackLists())[0] ?? []);

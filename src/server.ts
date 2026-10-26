@@ -2,6 +2,7 @@ import { join, resolve } from "node:path";
 import pkg from "../package.json";
 import { AdbClient } from "./adb/client";
 import { createApp } from "./api/app";
+import { Auth } from "./auth/auth";
 import { Bus } from "./bus";
 import { openDb } from "./db/db";
 import { DeviceManager } from "./devices/manager";
@@ -65,7 +66,15 @@ const monitor = new Monitor({
 	policy,
 	isScreenSessionActive: screenSessionActive(() => screens.list()),
 });
+const auth = new Auth(db);
+auth.pruneSessions();
+const pruneTimer = setInterval(() => auth.pruneSessions(), 6 * 3_600_000);
+if (!auth.hasUsers())
+	log("no-users", {
+		hint: "create one with: bun src/cli.ts users add NAME",
+	});
 const app = createApp({
+	auth,
 	inventory: new Inventory(db),
 	devices,
 	events,
@@ -99,6 +108,7 @@ for (const signal of ["SIGTERM", "SIGINT"] as const)
 		await sms.stop();
 		await monitor.stop();
 		await devices.stop();
+		clearInterval(pruneTimer);
 		db.close();
 		process.exit(0);
 	});
