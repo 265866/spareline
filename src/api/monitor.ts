@@ -54,7 +54,7 @@ export function monitorRoutes(monitor: Monitor | null) {
 				detail: {
 					summary: "Set a phone up to match the policy",
 					description:
-						"Applies every rule adb can set (radios and data off, Data Saver, default SMS app, screen settings, and removing the REMOVE apps, which deletes their data), then re-reads and verifies. Idempotent: a phone that already complies gets no commands. Requires Content-Type: application/json (an empty `{}` body is fine) or `X-Spareline: 1`.",
+						"Applies every rule of the policy profile that adb can set (such as radios and data off, Data Saver, the default SMS app, screen settings, and removing the listed apps, which deletes their data), then re-reads and verifies. Idempotent: a phone that already complies gets no commands. Answers 409 without a profile. Requires Content-Type: application/json (an empty `{}` body is fine) or `X-Spareline: 1`.",
 					tags: ["status"],
 				},
 			},

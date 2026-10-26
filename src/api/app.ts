@@ -212,6 +212,14 @@ export function createApp(options: AppOptions) {
 				})),
 				alerts: monitor?.alerts() ?? [],
 				dataThresholdBytes: monitor?.dataThresholdBytes ?? null,
+				profile: monitor?.policy
+					? {
+							name: monitor.policy.name,
+							setUp: monitor.policy.rules
+								.filter((rule) => rule.enforce)
+								.map((rule) => rule.describe),
+						}
+					: null,
 			}),
 			{
 				response: { 200: Status },

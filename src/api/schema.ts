@@ -190,6 +190,15 @@ export const Status = z.object({
 	),
 	alerts: z.array(Alert),
 	dataThresholdBytes: z.number().int().nullable(),
+	profile: z
+		.object({
+			name: z.string(),
+			setUp: z
+				.array(z.string())
+				.describe("What Set up phone applies, one line per rule"),
+		})
+		.nullable()
+		.describe("The policy profile in use; null runs no phone rules"),
 });
 
 export const Health = z.object({

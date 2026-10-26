@@ -17,8 +17,8 @@ afterEach(async () => {
 	await stop?.();
 });
 
-async function setup() {
-	const monitor = await startMonitor();
+async function setup(options: Parameters<typeof startMonitor>[0] = {}) {
+	const monitor = await startMonitor(options);
 	stop = monitor.stop;
 	const app = createApp({
 		inventory: new Inventory(monitor.db),
@@ -58,6 +58,11 @@ test("the status view carries rule results, data use, and alerts", async () => {
 	expect(response.status).toBe(200);
 	const view = (await response.json()) as StatusView;
 	expect(view.dataThresholdBytes).toBe(1_000_000);
+	expect(view.profile?.name).toBe("nuu-b30-no-data");
+	expect(view.profile?.setUp).toContain("Unneeded apps removed");
+	expect(view.profile?.setUp).toContain(
+		"Google Messages is the default SMS app",
+	);
 	const policy = view.phones[0]?.policy;
 	expect(policy?.check?.results).toHaveLength(18);
 	expect(
@@ -133,4 +138,22 @@ test("set-up and check refuse requests another site could make", async () => {
 		).status,
 	).toBe(200);
 	expect(phone.applied).toEqual(["svc wifi disable"]);
+});
+
+test("without a policy the status has no profile and set-up answers 409", async () => {
+	const { call } = await setup({ policy: null });
+	const view = (await (
+		await call("GET", "/api/v1/status")
+	).json()) as StatusView;
+	expect(view.profile).toBeNull();
+	expect(view.dataThresholdBytes).toBeNull();
+	expect(view.phones[0]?.policy?.check ?? null).toBeNull();
+	for (const action of ["provision", "check"]) {
+		const response = await call("POST", `/api/v1/phones/${B30}/${action}`);
+		expect(response.status).toBe(409);
+		expect(await response.json()).toEqual({
+			error:
+				"no policy profile is loaded (set POLICY_PROFILE to use phone rules)",
+		});
+	}
 });
