@@ -16,7 +16,8 @@
 		"check": "biome check .",
 		"format": "biome check --write .",
 		"typecheck": "tsc --noEmit",
-		"test": "bun test"
+		"test": "bun test",
+		"smoke": "bun src/smoke.ts"
 	},
 	"dependencies": {
 		"@elysiajs/openapi": "~1.4.16",
