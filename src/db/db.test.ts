@@ -34,8 +34,10 @@ const EXPECTED_TABLES = [
 	"number_bindings",
 	"numbers",
 	"phones",
+	"sessions",
 	"sim_placements",
 	"sims",
+	"users",
 ];
 
 test("a new database gets every table, WAL, and foreign keys", () => {
