@@ -102,3 +102,53 @@ CREATE TABLE inventory_edits (
 	entity_id INTEGER NOT NULL,
 	changes_json TEXT NOT NULL
 );
+
+-- Inbound texts, read from each phone's SMS and MMS providers (src/sms/).
+-- seq is the global cursor for every API that pages, waits, or streams; one
+-- writer commits in seq order, so `after=<seq>` never skips a row. A text
+-- stored before its number was known moves to a new, higher seq when the
+-- number is found, so cursors for that number see it.
+CREATE TABLE messages (
+	seq INTEGER PRIMARY KEY AUTOINCREMENT,
+	phone_id INTEGER NOT NULL REFERENCES phones (id),
+	provider TEXT NOT NULL CHECK (provider IN ('sms', 'mms')),
+	-- The provider row's _id. It can repeat if Messages' data is cleared, so
+	-- the dedup key includes received_at.
+	provider_id INTEGER NOT NULL,
+	sub_id INTEGER,
+	-- Resolved from (phone, sub_id) through sim_placements, then through
+	-- number_bindings; null until the SIM is known, and filled in later.
+	sim_id INTEGER REFERENCES sims (id),
+	number_id INTEGER REFERENCES numbers (id),
+	sender TEXT,
+	body TEXT NOT NULL DEFAULT '',
+	-- MMS only.
+	subject TEXT,
+	-- Carrier time (date_sent), the phone's clock (date), and the server's clock.
+	sent_at TEXT,
+	received_at TEXT NOT NULL,
+	ingested_at TEXT NOT NULL,
+	UNIQUE (phone_id, provider, provider_id, received_at)
+);
+CREATE INDEX messages_number ON messages (number_id, seq);
+CREATE INDEX messages_unattributed ON messages (seq) WHERE number_id IS NULL;
+
+-- MMS parts other than text and SMIL. The bytes are a file named by sha256
+-- under data/attachments/.
+CREATE TABLE attachments (
+	id INTEGER PRIMARY KEY,
+	message_seq INTEGER NOT NULL REFERENCES messages (seq),
+	content_type TEXT NOT NULL,
+	size INTEGER NOT NULL CHECK (size >= 0),
+	sha256 TEXT NOT NULL CHECK (length(sha256) = 64),
+	filename TEXT
+);
+CREATE INDEX attachments_message ON attachments (message_seq);
+
+-- The highest provider _id ingested per phone and provider.
+CREATE TABLE ingest_cursors (
+	phone_id INTEGER NOT NULL REFERENCES phones (id),
+	provider TEXT NOT NULL CHECK (provider IN ('sms', 'mms')),
+	last_provider_id INTEGER NOT NULL,
+	PRIMARY KEY (phone_id, provider)
+);

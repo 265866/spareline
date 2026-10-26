@@ -2,5 +2,13 @@
 	"model": "S6702X",
 	"fingerprint": "NUU/S6702X1/S6702XA:14/UP1A.231005.007/1726207303:user/release-keys",
 	"capturedAt": "2026-10-22T06:25:47.391Z",
-	"note": "IMEIs, ICCIDs, IMSI prefixes, phone numbers, and cell ids are fake; everything else is verbatim."
+	"note": "IMEIs, ICCIDs, IMSI prefixes, phone numbers, cell ids, SMS senders, SMS bodies, MMS subjects, and isms message ids are fake; everything else is verbatim.",
+	"smsCapturedAt": "2026-10-22T07:34:09.689Z",
+	"smsFiles": [
+		"isms.txt",
+		"sms-provider.txt",
+		"sms-keys.txt",
+		"mms-provider.txt",
+		"mms-keys.txt"
+	]
 }
