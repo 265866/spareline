@@ -246,7 +246,7 @@ test("a browser without WebCodecs is told why, and no socket opens", async () =>
 		],
 		[
 			{ isSecureContext: false },
-			"This browser can't play the video over plain HTTP. Open this site through its HTTPS tailnet address in Chrome, Edge, or Safari.",
+			"This browser can't play the video over plain HTTP. Open this site through its HTTPS address (the reverse proxy in front of the server) in Chrome, Edge, or Safari.",
 		],
 	] as const) {
 		const states: StreamState[] = [];

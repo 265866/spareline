@@ -119,11 +119,12 @@ const browserDeps: ScreenStreamDeps = {
 
 // WebCodecs needs a current browser and a secure context (HTTPS, or
 // localhost). No address is built from the current host: the server itself
-// speaks plain HTTP, and only Tailscale Serve adds HTTPS, on another port.
+// speaks plain HTTP, and only the reverse proxy in front of it adds HTTPS,
+// at an address the page cannot know.
 export function unsupportedMessage(page: { isSecureContext: boolean }): string {
 	return page.isSecureContext
 		? "This browser can't play the video. Open this site in a current Chrome, Edge, or Safari."
-		: "This browser can't play the video over plain HTTP. Open this site through its HTTPS tailnet address in Chrome, Edge, or Safari.";
+		: "This browser can't play the video over plain HTTP. Open this site through its HTTPS address (the reverse proxy in front of the server) in Chrome, Edge, or Safari.";
 }
 
 // The relay's close code for a viewer whose session ended
