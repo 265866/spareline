@@ -6,7 +6,7 @@ spareline turns old Android phones plugged into a small Linux host, such as a Ra
 
 It shows every phone the host's adb server sees, live: model, Android version, battery, temperature, per-SIM service and signal, whether mobile data is off, IMEIs, ICCIDs, and each SIM's number. Each number carries a free-text note, such as what the line is for. Every incoming text is copied from the phones into the database within seconds and is listed per number and in one log across numbers, live. **Screens** shows each phone's live screen with remote control (see below).
 
-Everything but the sign-in page needs an account. Accounts are made on the server (`bun src/cli.ts users add NAME`, see [Accounts](#accounts)); a signed-in browser keeps an HttpOnly session cookie for 30 days from its last use. The server binds `127.0.0.1` by default; put it behind a reverse proxy that adds HTTPS, such as `tailscale serve` or Caddy, before you reach it from other machines.
+Everything but the sign-in page needs an account or an API key. Accounts are made on the server (`bun src/cli.ts users add NAME`, see [Accounts](#accounts)); a signed-in browser keeps an HttpOnly session cookie for 30 days from its last use. The server binds `127.0.0.1` by default; put it behind a reverse proxy that adds HTTPS, such as `tailscale serve` or Caddy, before you reach it from other machines.
 
 ## Use it
 
@@ -85,6 +85,16 @@ bun src/cli.ts users remove NAME
 ```
 
 In the container, prefix them with `podman exec spareline`. Anyone signed in can change their own password on the **Settings** page (at least 12 characters); that signs out their other browsers. Passwords are stored as argon2id hashes and sessions as SHA-256 hashes of their tokens. After 10 failed sign-ins for one name in 15 minutes, further attempts for that name are refused for a while. When a session ends (signing out, a password change, `reset-password`, or `remove`), its open event streams and screens close too, at once or, for changes made with the CLI, within 5 seconds. Inventory edits and screen sessions record who made them.
+
+### API keys
+
+Scripts use API keys instead of a password. Create one on the **Settings** page (or `bun src/cli.ts keys add USER NAME read|full`), copy it (it is shown once), and send it as a bearer token:
+
+```sh
+curl -H "Authorization: Bearer sl_..." https://HOST/api/v1/numbers/+15125550101/messages?limit=5
+```
+
+A **read** key may make GET requests only: texts, attachments, events, the inventory, and the status. A **full** key may also edit, set phones up, and open screens. No key can create keys or change a password, so a leaked key cannot lock you out. Revoking a key on the Settings page (or `bun src/cli.ts keys revoke ID`) stops it at once. Keys are stored as SHA-256 hashes, and edits made with one record the key's name.
 
 Requests that change something must be JSON (or carry `X-Spareline: 1`), so a page on another site cannot make them in a signed-in browser; the session cookie is `SameSite=Strict`, and `Secure` when the request came over HTTPS (directly or with `X-Forwarded-Proto: https` from the proxy).
 
