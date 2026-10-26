@@ -174,3 +174,44 @@ test("the limiter refuses a key after 10 failures in 15 minutes, until the oldes
 	limiter.succeed(keys);
 	expect(limiter.retryAfter(keys)).toBeNull();
 });
+
+test("API keys: only the hash is kept, revoking stops them, and use is recorded once a minute", async () => {
+	const { user } = await auth.addUser("alice");
+	expect(() => auth.createKey(user.id, " ", "read")).toThrow(AuthError);
+	const { key, apiKey } = auth.createKey(user.id, "script", "read");
+	expect(apiKey).toMatchObject({
+		user: "alice",
+		name: "script",
+		scope: "read",
+		prefix: key.slice(0, 9),
+		lastUsedAt: null,
+		revokedAt: null,
+	});
+	expect(db.query("SELECT key_sha256 FROM api_keys").get()).toEqual({
+		key_sha256: sha256(key),
+	});
+	expect(auth.keyPrincipal(key)).toMatchObject({
+		kind: "key",
+		keyName: "script",
+		scope: "read",
+		user: { name: "alice" },
+	});
+	const first = auth.listKeys()[0]?.lastUsedAt;
+	expect(first).toBe(clock.now.toISOString());
+	clock.now = new Date(clock.now.getTime() + 30_000);
+	auth.keyPrincipal(key);
+	expect(auth.listKeys()[0]?.lastUsedAt).toBe(first);
+	clock.now = new Date(clock.now.getTime() + 30_000);
+	auth.keyPrincipal(key);
+	expect(auth.listKeys()[0]?.lastUsedAt).toBe(clock.now.toISOString());
+
+	expect(auth.keyPrincipal(`${key}x`)).toBeNull();
+	expect(auth.keyPrincipal(key.slice(3))).toBeNull();
+	expect(auth.revokeKey(apiKey.id).revokedAt).toBe(clock.now.toISOString());
+	expect(auth.keyPrincipal(key)).toBeNull();
+	expect(() => auth.revokeKey(999)).toThrow("no API key 999");
+	// Removing the user removes their keys.
+	auth.createKey(user.id, "another", "full");
+	auth.removeUser("alice");
+	expect(auth.listKeys()).toEqual([]);
+});

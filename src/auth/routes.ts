@@ -218,7 +218,7 @@ export function authRoutes(auth: Auth, limiter = new LoginLimiter()) {
 			"/logout",
 			({ request, set }) => {
 				const principal = principalOf(request);
-				if (principal) auth.endSession(principal.sessionId);
+				if (principal?.kind === "session") auth.endSession(principal.sessionId);
 				set.headers["set-cookie"] = sessionCookie(request, "", 0);
 				return { ok: true };
 			},
@@ -232,8 +232,8 @@ export function authRoutes(auth: Auth, limiter = new LoginLimiter()) {
 			"/password",
 			async ({ request, body, set }) => {
 				const principal = principalOf(request);
-				if (!principal)
-					throw new Error("the guard let an anonymous request in");
+				if (principal?.kind !== "session")
+					throw new Error("the guard let a non-session request in");
 				const keys = [`name:${principal.user.name.toLowerCase()}`];
 				const wait = limiter.retryAfter(keys);
 				if (wait !== null) {
