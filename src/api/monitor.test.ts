@@ -60,6 +60,7 @@ test("the status view carries rule results, data use, and alerts", async () => {
 	expect(view.dataThresholdBytes).toBe(1_000_000);
 	expect(view.profile?.name).toBe("nuu-b30-no-data");
 	expect(view.profile?.setUp).toContain("Unneeded apps removed");
+	expect(view.profile?.removesApps).toBe(true);
 	expect(view.profile?.setUp).toContain(
 		"Google Messages is the default SMS app",
 	);

@@ -168,8 +168,12 @@ function ActionButton({
 	);
 }
 
-function setupConfirm(profile: { name: string; setUp: string[] }): string {
-	const removes = profile.setUp.includes("Unneeded apps removed");
+function setupConfirm(profile: {
+	name: string;
+	setUp: string[];
+	removesApps: boolean;
+}): string {
+	const removes = profile.removesApps;
 	return `Set up this phone with the ${profile.name} profile?
 
 ${profile.setUp.map((line) => `- ${line}`).join("\n")}${removes ? "\n\nRemoving an app deletes its data. The app can be reinstalled later, but its data cannot be restored." : ""}`;

@@ -218,6 +218,9 @@ export function createApp(options: AppOptions) {
 							setUp: monitor.policy.rules
 								.filter((rule) => rule.enforce)
 								.map((rule) => rule.describe),
+							removesApps: monitor.policy.rules.some(
+								(rule) => rule.id === "debloat",
+							),
 						}
 					: null,
 			}),
