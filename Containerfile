@@ -16,6 +16,7 @@ COPY package.json bun.lock ./
 RUN bun install --frozen-lockfile --production && rm -rf /root/.bun/install/cache
 COPY src ./src
 COPY vendor ./vendor
+COPY profiles ./profiles
 COPY --from=build /app/dist ./dist
 RUN mkdir -p /app/data && chown 10001:10001 /app/data
 

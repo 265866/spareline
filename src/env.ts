@@ -28,9 +28,12 @@ const Env = z.object({
 		.min(30)
 		.max(86_400)
 		.default(300),
-	// Non-IMS mobile bytes per SIM in 24 h that turn data off again and the
-	// phone red.
-	DATA_THRESHOLD_BYTES: z.coerce.number().int().min(0).default(1_000_000),
+	// A policy profile (profiles/*.json); empty runs no phone rules.
+	POLICY_PROFILE: z
+		.string()
+		.trim()
+		.optional()
+		.transform((value) => value || null),
 });
 
 type Config = z.infer<typeof Env>;

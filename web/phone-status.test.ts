@@ -4,7 +4,8 @@ import type {
 	CheckReportView,
 	RuleResultView,
 } from "../src/api/monitor-schema";
-import { evaluate, parseSnapshot } from "../src/monitor/policy";
+import { evaluate } from "../src/monitor/policy";
+import { B30_POLICY } from "../test/b30-policy";
 import { fixture } from "../test/replay-shell";
 import {
 	alertText,
@@ -16,7 +17,7 @@ import {
 	safetyStatus,
 } from "./phone-status";
 
-// Rule results from the real policy, evaluated on READ_SCRIPT's output
+// Rule results from the B30 example profile, evaluated on its read's output
 // recorded from the B30 (set up, radio log buffer 256 KiB), and on that
 // recording with lines changed the way tapping in Settings would.
 
@@ -26,7 +27,7 @@ beforeAll(async () => {
 });
 
 const resultsOf = (text: string): RuleResultView[] =>
-	evaluate(parseSnapshot(text), { screenSession: false });
+	evaluate(B30_POLICY.parse(text), { screenSession: false }, B30_POLICY.rules);
 
 const change = (from: string | RegExp, to: string) => {
 	const next = recorded.replace(from, to);
@@ -41,7 +42,7 @@ test("a radio log buffer the phone did not take reads as a retry, not a task", (
 	const failing = problems(resultsOf(recorded));
 	expect(failing.map((result) => result.id)).toEqual(["log_buffer"]);
 	expect(problemText(failing[0] as RuleResultView)).toBe(
-		"Radio log buffer at least 4 MiB: now 256 KiB. The phone ignored the buffer size; it will be retried on the next check.",
+		"Radio log buffer at least 8 MiB: now 256 KiB. The phone ignored the buffer size; it will be retried on the next check.",
 	);
 });
 
@@ -68,11 +69,11 @@ test("an alert about a rule is worded from the rule, without the technical targe
 		serial: "SPARELINE00001",
 		severity: "info",
 		message:
-			"Radio log buffer at least 4 MiB: 256 KiB (want logcat -g -b radio reports a ring buffer of 4 MiB or more). On the phone: …",
+			"Radio log buffer at least 8 MiB: 256 KiB (want logcat -g -b radio reports a ring buffer of 8 MiB or more). On the phone: …",
 		since: "2026-10-22T00:00:00.000Z",
 	};
 	const text = alertText(alert, results);
-	expect(text).toStartWith("Radio log buffer at least 4 MiB: now 256 KiB.");
+	expect(text).toStartWith("Radio log buffer at least 8 MiB: now 256 KiB.");
 	expect(text).not.toContain("want");
 	// Other alerts, or a rule the phone no longer fails, keep their message.
 	const offline: AlertView = {

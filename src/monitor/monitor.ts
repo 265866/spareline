@@ -15,11 +15,10 @@ import {
 	type CheckContext,
 	evaluate,
 	MMS_ALWAYS_ALLOWED,
-	parseSnapshot,
+	type Policy,
 	plan,
 	presetDataOffCommands,
-	READ_SCRIPT,
-	RULES,
+	type Rule,
 	type RuleResult,
 	radioHazard,
 	type Snapshot,
@@ -37,12 +36,11 @@ export type MonitorOptions = {
 	db: Database;
 	events: Bus<DeviceEventRow>;
 	log: Log;
+	// The rules from the policy profile; null checks and enforces none.
+	policy: Policy | null;
 	checkIntervalMs?: number;
 	healthIntervalMs?: number;
 	simPollMs?: number;
-	// Internet mobile bytes per SIM per trailing 24 h before data is turned
-	// off again and the phone goes red.
-	dataThresholdBytes?: number;
 	// True while a screen session streams from the phone (scrcpy holds
 	// stay_on_while_plugged_in). The screens module supplies it.
 	isScreenSessionActive?: (serial: string) => boolean;
@@ -132,11 +130,13 @@ type DataOffCause = "sim" | "data_threshold";
 
 export class MonitorError extends Error {}
 
-// Runs the phone policy on every online phone: a drift check on connect and
-// every 5 minutes (radio and data drift reverted on sight, which is all a
-// phone gets automatically), Provision on request, the data watch, SIM
-// hotplug, health aggregates, and alerts. Work on one phone runs one step at
-// a time, except the data-off that a SIM signal triggers.
+// Looks after every online phone: health aggregates and alerts, and SIM
+// hotplug for the inventory. With a policy it also runs the policy: a drift
+// check on connect and every 5 minutes (radio and data drift reverted on
+// sight, which is all a phone gets automatically), Provision on request, and,
+// when the policy keeps radios off, the data watch and data-off on SIM
+// changes. Work on one phone runs one step at a time, except the data-off
+// that a SIM signal triggers.
 export class Monitor {
 	private readonly runtimes = new Map<string, Runtime>();
 	private readonly health: HealthRecorder;
@@ -148,12 +148,18 @@ export class Monitor {
 	// Orders data-off failures against the checks that may clear them.
 	private sequence = 0;
 	private readonly now: () => Date;
-	readonly dataThresholdBytes: number;
+	readonly policy: Policy | null;
 
 	constructor(private readonly options: MonitorOptions) {
 		this.now = options.now ?? (() => new Date());
 		this.health = new HealthRecorder(options.db);
-		this.dataThresholdBytes = options.dataThresholdBytes ?? 1_000_000;
+		this.policy = options.policy;
+	}
+
+	// Internet mobile bytes per SIM per trailing 24 h before data is turned
+	// off again and the phone goes red; null without a radios-off policy.
+	get dataThresholdBytes(): number | null {
+		return this.policy?.radiosOff?.dataThresholdBytes ?? null;
 	}
 
 	start(): void {
@@ -166,19 +172,21 @@ export class Monitor {
 		);
 		for (const phone of devices.list())
 			if (phone.status === "online") this.connected(phone.serial);
-		this.checkTimer = setInterval(
-			() => {
-				for (const phone of devices.list())
-					if (phone.status === "online") {
-						const runtime = this.runtime(phone.serial);
-						if (!runtime.busy)
-							this.enqueue(runtime, "check", () =>
-								this.runCheck(runtime, "interval"),
-							).catch((error) => this.unexpected(runtime, "interval", error));
-					}
-			},
-			this.options.checkIntervalMs ?? 5 * 60_000,
-		);
+		const policy = this.policy;
+		if (policy)
+			this.checkTimer = setInterval(
+				() => {
+					for (const phone of devices.list())
+						if (phone.status === "online") {
+							const runtime = this.runtime(phone.serial);
+							if (!runtime.busy)
+								this.enqueue(runtime, "check", () =>
+									this.runCheck(runtime, policy, "interval"),
+								).catch((error) => this.unexpected(runtime, "interval", error));
+						}
+				},
+				this.options.checkIntervalMs ?? 5 * 60_000,
+			);
 		this.healthTimer = setInterval(
 			() => this.sampleHealth(),
 			this.options.healthIntervalMs ?? 60_000,
@@ -225,19 +233,23 @@ export class Monitor {
 	}
 
 	// Runs the drift check now.
-	check(serial: string): Promise<CheckReport> {
+	async check(serial: string): Promise<CheckReport> {
+		const policy = this.required();
 		const runtime = this.online(serial);
 		return this.enqueue(runtime, "check", () =>
-			this.runCheck(runtime, "manual"),
+			this.runCheck(runtime, policy, "manual"),
 		);
 	}
 
 	// Sets the phone up to match the policy: applies every enforceable rule,
-	// including debloat and the default SMS app, then verifies. Only on
+	// including removing apps and the default SMS app, then verifies. Only on
 	// request: it removes apps and their data.
-	provision(serial: string): Promise<ProvisionReport> {
+	async provision(serial: string): Promise<ProvisionReport> {
+		const policy = this.required();
 		const runtime = this.online(serial);
-		return this.enqueue(runtime, "provision", () => this.runProvision(runtime));
+		return this.enqueue(runtime, "provision", () =>
+			this.runProvision(runtime, policy),
+		);
 	}
 
 	// Samples health now; for tests and the timer.
@@ -246,6 +258,14 @@ export class Monitor {
 			this.mobileBytes(serial),
 		);
 		this.refreshAlerts();
+	}
+
+	private required(): Policy {
+		if (!this.policy)
+			throw new MonitorError(
+				"no policy profile is loaded (set POLICY_PROFILE to use phone rules)",
+			);
+		return this.policy;
 	}
 
 	private online(serial: string): Runtime {
@@ -324,9 +344,11 @@ export class Monitor {
 			onSignal: (reason) => this.simSignal(runtime, reason),
 		});
 		runtime.watch.start();
-		this.enqueue(runtime, "check", () =>
-			this.runCheck(runtime, "connect"),
-		).catch((error) => this.unexpected(runtime, "connect", error));
+		const policy = this.policy;
+		if (policy)
+			this.enqueue(runtime, "check", () =>
+				this.runCheck(runtime, policy, "connect"),
+			).catch((error) => this.unexpected(runtime, "connect", error));
 	}
 
 	private disconnected(serial: string): void {
@@ -343,7 +365,7 @@ export class Monitor {
 		// Data off at once, without waiting behind queued work: a new SIM's
 		// data may already be coming up. Running beside a check is safe, since
 		// both only turn data off.
-		this.dataOffNow(runtime);
+		if (this.policy?.radiosOff) this.dataOffNow(runtime);
 		clearTimeout(runtime.simTimer);
 		runtime.simTimer = setTimeout(() => {
 			if (!this.running || !runtime.watch) return;
@@ -412,23 +434,25 @@ export class Monitor {
 
 	private async read(
 		serial: string,
+		policy: Policy,
 	): Promise<{ snapshot: Snapshot; ms: number }> {
 		const started = performance.now();
-		const result = await this.options.devices.shell(serial, READ_SCRIPT, {
+		const result = await this.options.devices.shell(serial, policy.readScript, {
 			timeoutMs: 60_000,
 		});
 		const ms = Math.round(performance.now() - started);
 		const stdout = new TextDecoder().decode(result.stdout);
-		if (!stdout.includes("@@sl:netstats"))
+		const sections = splitSections(stdout);
+		if (!sections.has(policy.lastSection))
 			throw new Error(
 				`policy read was cut short (exit ${result.exitCode}): ${new TextDecoder().decode(result.stderr).trim()}`,
 			);
-		assertIsub(splitSections(stdout).get("isub") ?? "");
-		const snapshot = parseSnapshot(stdout);
-		// Every namespace has keys the policy reads; an empty one means the
-		// settings tool failed, not that the settings are gone.
-		for (const [ns, values] of Object.entries(snapshot.settings))
-			if (values.size === 0)
+		assertIsub(sections.get("isub") ?? "");
+		const snapshot = policy.parse(stdout);
+		// Every namespace read has keys the policy needs; an empty one means
+		// the settings tool failed, not that the settings are gone.
+		for (const ns of policy.namespaces)
+			if (snapshot.settings[ns].size === 0)
 				throw new Error(`policy read returned no ${ns} settings`);
 		return { snapshot, ms };
 	}
@@ -494,7 +518,12 @@ export class Monitor {
 			assertIsub(isub);
 			changes = this.observeSlots(runtime, parseIsub(isub).active);
 		} catch (error) {
-			this.fail(runtime, "sim", at, error, null);
+			if (this.policy) this.fail(runtime, "sim", at, error, null);
+			else
+				this.options.log("sim-read-failed", {
+					serial: runtime.serial,
+					error: errorText(error),
+				});
 			return;
 		}
 		this.options.log("sim-signal", {
@@ -508,49 +537,54 @@ export class Monitor {
 		// Each new SIM's own data key, before anything else reads or records
 		// the SIM: with ro.com.android.mobiledata unset (measured on the B30) a
 		// new SIM's data defaults to on.
-		if (inserted.length > 0)
+		if (this.policy?.radiosOff && inserted.length > 0)
 			try {
 				await this.apply(runtime.serial, dataOffCommands(inserted));
 			} catch (error) {
 				this.dataOffFailed(runtime, "sim", error);
 			}
-		if (changes.length > 0) await this.runCheck(runtime, "sim", changes);
+		if (this.policy && changes.length > 0)
+			await this.runCheck(runtime, this.policy, "sim", changes);
 		else devices.refresh(runtime.serial);
 	}
 
-	// Reads every rule, reverts radio and data drift, and turns data off for
-	// SIMs over the threshold or new ones. Never throws: a failure is recorded
-	// on the report and raises an alert.
+	// Reads every rule, reverts radio and data drift, and, when the policy
+	// keeps radios off, turns data off for SIMs over the threshold or new
+	// ones. Never throws: a failure is recorded on the report and raises an
+	// alert.
 	private async runCheck(
 		runtime: Runtime,
+		policy: Policy,
 		reason: CheckReason,
 		known: SimChange[] = [],
 	): Promise<CheckReport> {
 		const { serial } = runtime;
+		const { rules, radiosOff } = policy;
 		const context = this.context(serial);
 		const at = this.now().toISOString();
 		// A data-off failure recorded after this point is newer than what this
 		// check reads, so this check must not clear it.
 		const started = ++this.sequence;
-		let dataOffCause: DataOffCause | null = known.some(
-			(change) => change.to !== null,
-		)
-			? "sim"
-			: null;
+		let dataOffCause: DataOffCause | null =
+			radiosOff && known.some((change) => change.to !== null) ? "sim" : null;
 		try {
-			const { snapshot, ms: readMs } = await this.read(serial);
+			const { snapshot, ms: readMs } = await this.read(serial, policy);
 			const changes = [...known, ...this.observeSlots(runtime, snapshot.subs)];
-			const inserted = changes.flatMap((change) =>
-				change.to === null ? [] : [{ slot: change.slot, subId: change.to }],
-			);
-			const before = evaluate(snapshot, context);
+			const inserted = radiosOff
+				? changes.flatMap((change) =>
+						change.to === null ? [] : [{ slot: change.slot, subId: change.to }],
+					)
+				: [];
+			const before = evaluate(snapshot, context, rules);
 			const usage = this.usage(snapshot);
 			const over = usage.filter((sim) => sim.over);
-			const steps = plan(snapshot, context, (rule) => rule.autoFix);
+			const steps = plan(snapshot, context, (rule) => rule.autoFix, rules);
 			const dataOffSubs = [...over, ...inserted].map((sim) => sim.subId);
 			const extra = dataOffSubs.length > 0 ? dataOffCommands(dataOffSubs) : [];
 			const preset =
-				reason === "connect" ? presetDataOffCommands(snapshot) : [];
+				radiosOff && reason === "connect"
+					? presetDataOffCommands(snapshot)
+					: [];
 			if (inserted.length > 0) dataOffCause = "sim";
 			else if (over.length > 0) dataOffCause ??= "data_threshold";
 			let after = before;
@@ -559,13 +593,13 @@ export class Monitor {
 				// Safety first: radios and data off, then everything else (the
 				// log buffer), in case the batch is cut short.
 				await this.apply(serial, [
-					...commandsOf(steps, true),
+					...commandsOf(rules, steps, true),
 					...extra,
 					...preset,
-					...commandsOf(steps, false),
+					...commandsOf(rules, steps, false),
 				]);
-				({ snapshot: afterSnapshot } = await this.read(serial));
-				after = evaluate(afterSnapshot, context);
+				({ snapshot: afterSnapshot } = await this.read(serial, policy));
+				after = evaluate(afterSnapshot, context, rules);
 			}
 			const byId = (results: RuleResult[], id: string) =>
 				results.find((result) => result.id === id);
@@ -590,15 +624,19 @@ export class Monitor {
 			// Drift is logged whether or not the revert took. A routine fix (the
 			// log buffer) is logged only when it took; a failed one shows on the
 			// phone's card instead.
-			const routine = reverted.filter((revert) => fixEventOf(revert.rule));
-			const drifted = reverted.filter((revert) => !fixEventOf(revert.rule));
+			const routine = reverted.filter((revert) =>
+				fixEventOf(rules, revert.rule),
+			);
+			const drifted = reverted.filter(
+				(revert) => !fixEventOf(rules, revert.rule),
+			);
 			for (const revert of drifted)
 				events.push({ phoneId, kind: "drift", detail: { ...revert, reason } });
 			for (const revert of routine)
 				if (revert.fixed)
 					events.push({
 						phoneId,
-						kind: fixEventOf(revert.rule) as string,
+						kind: fixEventOf(rules, revert.rule) as string,
 						detail: { ...revert, reason },
 					});
 			for (const sim of over)
@@ -611,7 +649,7 @@ export class Monitor {
 							slot: sim.slot,
 							rx: sim.rx,
 							tx: sim.tx,
-							thresholdBytes: this.dataThresholdBytes,
+							thresholdBytes: radiosOff?.dataThresholdBytes,
 							uids: sim.uids.slice(0, 5),
 							dataOff,
 						},
@@ -636,7 +674,7 @@ export class Monitor {
 				this.options.log("drift", { serial, reason, reverted: drifted });
 			for (const revert of routine)
 				this.options.log(
-					(fixEventOf(revert.rule) as string).replaceAll("_", "-"),
+					(fixEventOf(rules, revert.rule) as string).replaceAll("_", "-"),
 					{ serial, reason, ...revert },
 				);
 			runtime.check = {
@@ -686,24 +724,28 @@ export class Monitor {
 		return runtime.check;
 	}
 
-	private async runProvision(runtime: Runtime): Promise<ProvisionReport> {
+	private async runProvision(
+		runtime: Runtime,
+		policy: Policy,
+	): Promise<ProvisionReport> {
 		const { serial } = runtime;
 		const context = this.context(serial);
 		const started = performance.now();
 		const at = this.now().toISOString();
 		let report: ProvisionReport;
 		try {
-			const { snapshot } = await this.read(serial);
+			const { rules } = policy;
+			const { snapshot } = await this.read(serial, policy);
 			const changes = this.observeSlots(runtime, snapshot.subs);
-			const steps = plan(snapshot, context, () => true);
+			const steps = plan(snapshot, context, () => true, rules);
 			const ran = await this.apply(serial, [
-				...commandsOf(steps, true),
-				...presetDataOffCommands(snapshot),
-				...commandsOf(steps, false),
+				...commandsOf(rules, steps, true),
+				...(policy.radiosOff ? presetDataOffCommands(snapshot) : []),
+				...commandsOf(rules, steps, false),
 			]);
 			if (changes.length > 0) this.options.devices.refresh(serial);
-			const { snapshot: after } = await this.read(serial);
-			const results = evaluate(after, context);
+			const { snapshot: after } = await this.read(serial, policy);
+			const results = evaluate(after, context, rules);
 			report = {
 				at,
 				durationMs: Math.round(performance.now() - started),
@@ -769,12 +811,15 @@ export class Monitor {
 		return report;
 	}
 
+	// The data watch, which only a radios-off policy reads for.
 	private usage(snapshot: Snapshot): SimDataUsage[] {
+		const threshold = this.dataThresholdBytes;
+		if (threshold === null) return [];
 		const now = snapshot.phoneClock ?? Math.floor(this.now().getTime() / 1000);
 		return internetUsage(parseNetstats(snapshot.netstats), now).map((sim) => ({
 			...sim,
 			slot: snapshot.subs.find((sub) => sub.subId === sim.subId)?.slot ?? null,
-			over: sim.rx + sim.tx > this.dataThresholdBytes,
+			over: sim.rx + sim.tx > threshold,
 		}));
 	}
 
@@ -821,7 +866,9 @@ export class Monitor {
 				if (result.ok) continue;
 				// A radio or data setting the fix could not turn off is critical;
 				// any other rule, the log buffer included, is a card item.
-				const unfixedRadio = result.autoFix && !!ruleOf(result.id)?.safety;
+				const unfixedRadio =
+					result.autoFix &&
+					!!ruleOf(this.policy?.rules ?? [], result.id)?.safety;
 				next.push({
 					key: `${unfixedRadio ? "drift_unfixed" : "policy"}:${runtime.serial}:${result.id}`,
 					kind: unfixedRadio ? "drift_unfixed" : "policy",
@@ -930,16 +977,19 @@ function assertIsub(text: string): void {
 		throw new Error("dumpsys isub printed no subscription list");
 }
 
-const ruleOf = (id: string) => RULES.find((rule) => rule.id === id);
-const fixEventOf = (id: string) => ruleOf(id)?.fixEvent;
+const ruleOf = (rules: readonly Rule[], id: string) =>
+	rules.find((rule) => rule.id === id);
+const fixEventOf = (rules: readonly Rule[], id: string) =>
+	ruleOf(rules, id)?.fixEvent;
 
 // The commands of the safety (radio and data) steps, or of the others.
 function commandsOf(
+	rules: readonly Rule[],
 	steps: { rule: string; commands: string[] }[],
 	safety: boolean,
 ): string[] {
 	return steps
-		.filter((step) => (ruleOf(step.rule)?.safety ?? false) === safety)
+		.filter((step) => (ruleOf(rules, step.rule)?.safety ?? false) === safety)
 		.flatMap((step) => step.commands);
 }
 

@@ -1,7 +1,10 @@
-// The phone policy as data. The drift checker and Provision both run this
-// one list, so they cannot disagree. Every rule reads through one batched,
-// read-only shell call (READ_SCRIPT); enforce commands only ever turn radios
-// and data off.
+// The phone policy as data, built from a profile (profiles/*.json). The
+// drift checker and Provision both run one policy's rules, so they cannot
+// disagree. Every rule reads through one batched, read-only shell call (the
+// policy's readScript); enforce commands only ever turn radios and data off.
+import { readFileSync } from "node:fs";
+import { basename } from "node:path";
+import { z } from "zod";
 import {
 	parseIsub,
 	parseRegistry,
@@ -9,107 +12,63 @@ import {
 	splitSections,
 } from "../devices/parse";
 
-export const MESSAGES = "com.google.android.apps.messaging";
 export const SMS_ROLE = "android.app.role.SMS";
 
-// Apps removed for user 0.
-// `pm uninstall --user 0` deletes the app's data for user 0;
-// `cmd package install-existing <pkg>` brings the app back without it.
-export const REMOVE = [
-	"com.android.chrome",
-	"com.android.vending",
-	"com.google.android.youtube",
-	"com.google.android.apps.youtube.music",
-	"com.google.android.videos",
-	"com.google.android.apps.maps",
-	"com.google.android.apps.photos",
-	"com.google.android.gm",
-	"com.google.android.apps.docs",
-	"com.google.android.keep",
-	"com.google.android.calendar",
-	"com.google.android.apps.tachyon",
-	"com.google.android.apps.googleassistant",
-	"com.google.android.googlequicksearchbox",
-	"com.google.android.apps.walletnfcrel",
-	"com.google.android.apps.subscriptions.red",
-	"com.google.android.projection.gearhead",
-	"com.google.android.apps.nbu.files",
-	"com.google.android.apps.adm",
-	"com.google.android.apps.safetyhub",
-	"com.google.android.apps.wellbeing",
-	"com.google.android.apps.restore",
-	"com.google.android.feedback",
-	"com.google.android.apps.turbo",
-	"com.google.android.gms.location.history",
-	"com.google.android.calculator",
-	"com.google.android.deskclock",
-	"com.google.android.dialer",
-	"com.google.android.contacts",
-	"com.google.android.apps.carrier.carrierwifi",
-	"com.google.ambient.streaming",
-	"com.google.android.partnersetup",
-	"com.google.android.printservice.recommendation",
-	"com.android.musicfx",
-	"com.nuumobile.livesupport",
-	"com.nuumobile.nuualerts",
-	"android.autoinstalls.config.nuumobile.s6702x",
-] as const;
-
-// The radio log buffer the SIM watch and later diagnosis need; anything
-// from 4 MiB up holds hours of radio traffic. The B30's logd ignores
-// persist.logd.size (Developer options' "Logger buffer sizes") at boot and
-// starts every buffer at 256 KiB (measured: setting 8M, buffers 256 KiB a
-// day after a reboot), but `logcat -G` resizes them at once until the next
-// reboot (measured), so the drift checker sets it after every boot.
-export const MIN_RADIO_BUFFER_BYTES = 4 * 1024 * 1024;
-export const LOG_BUFFER_COMMAND = "logcat -b main,system,radio,crash -G 8M";
-
-type Namespace = "global" | "secure" | "system";
-
-// Settings each namespace's read keeps (grep -E alternatives). Per-SIM keys
-// carry the subscription id as a suffix, such as mobile_data1.
-const SETTING_KEYS: Record<Namespace, string[]> = {
-	global: [
-		"mobile_data[0-9]*",
-		"data_roaming[0-9]*",
-		"wifi_on",
-		"wifi_wakeup_enabled",
-		"wifi_scan_always_enabled",
-		"ble_scan_always_enabled",
-		"bluetooth_on",
-		"ota_disable_automatic_update",
-		"stay_on_while_plugged_in",
-	],
-	secure: ["location_mode"],
-	system: ["screen_brightness_mode", "screen_brightness", "screen_off_timeout"],
+// Names shown for SMS apps a profile commonly picks.
+const APP_NAMES: Record<string, string> = {
+	"com.google.android.apps.messaging": "Google Messages",
 };
 
-// Every read the policy and the data watch need, in one shell call. grep
-// trims the large outputs on the phone so only the lines read cross USB.
-const READS: [string, string][] = [
-	...(Object.keys(SETTING_KEYS) as Namespace[]).map((ns): [string, string] => [
-		`settings:${ns}`,
-		`settings list ${ns} | grep -E '^(${SETTING_KEYS[ns].join("|")})='`,
-	]),
-	["isub", "dumpsys isub"],
-	[
-		"registry",
-		"dumpsys telephony.registry | grep -E '^  Phone Id=|^    mIsDataEnabled='",
-	],
-	["datasaver", "cmd netpolicy get restrict-background"],
-	["smsrole", `cmd role get-role-holders ${SMS_ROLE}`],
-	[
-		"bloat",
-		`pm list packages --user 0 | grep -xF ${REMOVE.map((name) => `-e package:${name}`).join(" ")}`,
-	],
-	["radiobuf", "logcat -g -b radio"],
-	["clock", "date +%s"],
-	["netstats", "dumpsys netstats --full --uid"],
-];
+const PackageName = z
+	.string()
+	.regex(/^[A-Za-z][\w]*(\.[A-Za-z_][\w]*)+$/, "an Android package name");
 
-export const READ_SCRIPT = READS.map(
-	([name, command]) => `${sectionMarker(name)}; ${command}`,
-).join("; ");
+// Every group is optional; a profile turns on only what it names.
+export const Profile = z
+	.object({
+		// Mobile data, roaming, Wi-Fi and its scanning and wake-up, Bluetooth
+		// and its scanning, and location stay off. It also turns data off when
+		// a SIM changes, writes the next SIMs' data keys ahead of time, and
+		// watches mobile data use.
+		radiosOff: z
+			.object({
+				// Internet mobile bytes per SIM in 24 h that turn data off again
+				// and raise an alert.
+				dataThresholdBytes: z.number().int().min(0).default(1_000_000),
+			})
+			.strict()
+			.optional(),
+		dataSaver: z.boolean().default(false),
+		// The package that must be the default SMS app.
+		smsApp: PackageName.optional(),
+		// Apps removed for user 0 by Set up phone. `pm uninstall --user 0`
+		// deletes the app's data for user 0; `cmd package install-existing
+		// <pkg>` brings the app back without it.
+		removeApps: z.array(PackageName).default([]),
+		screen: z
+			.object({
+				autoBrightness: z.boolean().optional(),
+				brightness: z.number().int().min(0).max(255).optional(),
+				timeoutSeconds: z.number().int().min(1).max(86_400).optional(),
+				stayOnWhileCharging: z.boolean().optional(),
+			})
+			.strict()
+			.default({}),
+		disableSystemUpdates: z.boolean().default(false),
+		// The radio log buffer the drift checker keeps at least this large
+		// (logcat -G). Some phones ignore Developer options' "Logger buffer
+		// sizes" at boot (measured on the NUU B30: 256 KiB after every reboot).
+		radioLogBufferMiB: z.number().int().min(1).max(64).optional(),
+		// "MMS messages" stays on with mobile data off, on every SIM. adb
+		// cannot set it, so it is only checked.
+		mmsWithDataOff: z.boolean().default(false),
+	})
+	.strict();
+
+export type Profile = z.infer<typeof Profile>;
+
+type Namespace = "global" | "secure" | "system";
+const NAMESPACES: Namespace[] = ["global", "secure", "system"];
 
 export type ActiveSub = {
 	subId: number;
@@ -119,8 +78,8 @@ export type ActiveSub = {
 	dataPolicies: number[] | null;
 };
 
-// What one READ_SCRIPT run returned, parsed. Null means the read printed
-// nothing usable.
+// What one read returned, parsed. Null means the read printed nothing
+// usable.
 export type Snapshot = {
 	settings: Record<Namespace, Map<string, string>>;
 	subs: ActiveSub[];
@@ -130,7 +89,7 @@ export type Snapshot = {
 	dataEnabled: { slot: number; enabled: boolean | null }[];
 	dataSaver: boolean | null;
 	smsRoleHolders: string[] | null;
-	// REMOVE packages still installed for user 0.
+	// Apps the profile removes that are still installed for user 0.
 	bloat: string[];
 	// The radio log buffer's size in effect, not the persist.logd.size
 	// setting: on the B30 the setting said 8M while the buffer was 256 KiB.
@@ -142,11 +101,14 @@ export type Snapshot = {
 
 export const MMS_ALWAYS_ALLOWED = 2;
 
-export function parseSnapshot(stdout: string): Snapshot {
+export function parseSnapshot(
+	stdout: string,
+	removeApps: readonly string[],
+): Snapshot {
 	const sections = splitSections(stdout);
 	const get = (name: string) => sections.get(name) ?? "";
 	const settings = {} as Record<Namespace, Map<string, string>>;
-	for (const ns of Object.keys(SETTING_KEYS) as Namespace[]) {
+	for (const ns of NAMESPACES) {
 		const map = new Map<string, string>();
 		for (const line of get(`settings:${ns}`).split(/\r?\n/)) {
 			const eq = line.indexOf("=");
@@ -180,7 +142,7 @@ export function parseSnapshot(stdout: string): Snapshot {
 		bloat: get("bloat")
 			.split(/\r?\n/)
 			.map((line) => line.trim().replace(/^package:/, ""))
-			.filter((name) => (REMOVE as readonly string[]).includes(name)),
+			.filter((name) => removeApps.includes(name)),
 		radioBufferBytes: bufferBytes(get("radiobuf")),
 		phoneClock: /^\d+$/.test(clock) ? Number(clock) : null,
 		netstats: get("netstats"),
@@ -221,6 +183,9 @@ export type Rule = {
 	safety?: boolean;
 	// The event an automatic fix logs; "drift" unless the fix is routine.
 	fixEvent?: string;
+	// Settings the rule reads (grep -E alternatives). Per-SIM keys carry the
+	// subscription id as a suffix, such as mobile_data1.
+	settings?: { ns: Namespace; key: string }[];
 	check(snapshot: Snapshot, context: CheckContext): Outcome;
 	// Commands that make the rule pass; idempotent. Absent when adb cannot
 	// set it.
@@ -265,6 +230,7 @@ function settingRule(input: {
 		severity: input.severity,
 		autoFix: input.autoFix,
 		safety: input.safety,
+		settings: [{ ns: input.ns, key: input.key }],
 		check(snapshot, context) {
 			const value = settingValue(snapshot, input.ns, input.key);
 			if (input.acceptDuringScreenSession && context.screenSession)
@@ -300,6 +266,7 @@ function perSimOffRule(input: {
 		severity: "critical",
 		autoFix: true,
 		safety: true,
+		settings: [{ ns: "global", key: `${input.key}[0-9]*` }],
 		check(snapshot) {
 			const values = keys(snapshot).map(
 				(key) => [key, settingValue(snapshot, "global", key)] as const,
@@ -322,139 +289,157 @@ function perSimOffRule(input: {
 	};
 }
 
-export const RULES: readonly Rule[] = [
-	perSimOffRule({
-		id: "mobile_data",
-		describe: "Mobile data off, on every SIM",
-		key: "mobile_data",
-		first: ["svc data disable"],
-		// Telephony's own flag, in case a setting and the data stack disagree.
-		extra: (snapshot) =>
-			snapshot.dataEnabled
-				.filter((slot) => slot.enabled === true)
-				.map((slot) => `slot ${slot.slot} data enabled`),
-	}),
-	perSimOffRule({
-		id: "data_roaming",
-		describe: "Data roaming off, on every SIM",
-		key: "data_roaming",
-		first: [],
-	}),
-	settingRule({
-		id: "wifi_off",
-		describe: "Wi-Fi off",
-		ns: "global",
-		key: "wifi_on",
-		want: "0",
-		severity: "critical",
-		autoFix: true,
-		safety: true,
-		command: "svc wifi disable",
-	}),
-	settingRule({
-		id: "wifi_wakeup_off",
-		describe: "Wi-Fi does not turn itself back on",
-		ns: "global",
-		key: "wifi_wakeup_enabled",
-		want: "0",
-		severity: "critical",
-		autoFix: true,
-		safety: true,
-	}),
-	settingRule({
-		id: "wifi_scan_off",
-		describe: "Wi-Fi scanning off",
-		ns: "global",
-		key: "wifi_scan_always_enabled",
-		want: "0",
-		severity: "critical",
-		autoFix: true,
-		safety: true,
-	}),
-	settingRule({
-		id: "ble_scan_off",
-		describe: "Bluetooth scanning off",
-		ns: "global",
-		key: "ble_scan_always_enabled",
-		want: "0",
-		severity: "critical",
-		autoFix: true,
-		safety: true,
-	}),
-	{
-		...settingRule({
-			id: "bluetooth_off",
-			describe: "Bluetooth off",
+function radioRules(): Rule[] {
+	return [
+		perSimOffRule({
+			id: "mobile_data",
+			describe: "Mobile data off, on every SIM",
+			key: "mobile_data",
+			first: ["svc data disable"],
+			// Telephony's own flag, in case a setting and the data stack disagree.
+			extra: (snapshot) =>
+				snapshot.dataEnabled
+					.filter((slot) => slot.enabled === true)
+					.map((slot) => `slot ${slot.slot} data enabled`),
+		}),
+		perSimOffRule({
+			id: "data_roaming",
+			describe: "Data roaming off, on every SIM",
+			key: "data_roaming",
+			first: [],
+		}),
+		settingRule({
+			id: "wifi_off",
+			describe: "Wi-Fi off",
 			ns: "global",
-			key: "bluetooth_on",
+			key: "wifi_on",
+			want: "0",
+			severity: "critical",
+			autoFix: true,
+			safety: true,
+			command: "svc wifi disable",
+		}),
+		settingRule({
+			id: "wifi_wakeup_off",
+			describe: "Wi-Fi does not turn itself back on",
+			ns: "global",
+			key: "wifi_wakeup_enabled",
 			want: "0",
 			severity: "critical",
 			autoFix: true,
 			safety: true,
 		}),
-		// The adapter turns off asynchronously; wait so the re-check sees it.
-		enforce: () => [
-			"cmd bluetooth_manager disable",
-			"cmd bluetooth_manager wait-for-state:STATE_OFF",
-		],
-	},
-	settingRule({
-		id: "location_off",
-		describe: "Location off",
-		ns: "secure",
-		key: "location_mode",
-		want: "0",
-		severity: "critical",
-		autoFix: true,
-		safety: true,
-	}),
-	settingRule({
-		id: "ota_off",
-		describe: "Automatic system updates off",
-		ns: "global",
-		key: "ota_disable_automatic_update",
-		want: "1",
-		severity: "warning",
-		autoFix: false,
-	}),
-	settingRule({
-		id: "stay_on_off",
-		describe: "Screen does not stay on while charging",
-		ns: "global",
-		key: "stay_on_while_plugged_in",
-		want: "0",
-		severity: "info",
-		autoFix: false,
-		acceptDuringScreenSession: true,
-	}),
-	settingRule({
-		id: "brightness_manual",
-		describe: "Manual brightness",
-		ns: "system",
-		key: "screen_brightness_mode",
-		want: "0",
-		severity: "info",
-		autoFix: false,
-	}),
-	settingRule({
-		id: "brightness_low",
-		describe: "Brightness 10 of 255",
-		ns: "system",
-		key: "screen_brightness",
-		want: "10",
-		severity: "info",
-		autoFix: false,
-	}),
-	settingRule({
-		id: "screen_timeout",
-		describe: "Screen turns off after 15 s",
-		ns: "system",
-		key: "screen_off_timeout",
-		want: "15000",
-		severity: "info",
-		autoFix: false,
-	}),
-	{
+		settingRule({
+			id: "wifi_scan_off",
+			describe: "Wi-Fi scanning off",
+			ns: "global",
+			key: "wifi_scan_always_enabled",
+			want: "0",
+			severity: "critical",
+			autoFix: true,
+			safety: true,
+		}),
+		settingRule({
+			id: "ble_scan_off",
+			describe: "Bluetooth scanning off",
+			ns: "global",
+			key: "ble_scan_always_enabled",
+			want: "0",
+			severity: "critical",
+			autoFix: true,
+			safety: true,
+		}),
+		{
+			...settingRule({
+				id: "bluetooth_off",
+				describe: "Bluetooth off",
+				ns: "global",
+				key: "bluetooth_on",
+				want: "0",
+				severity: "critical",
+				autoFix: true,
+				safety: true,
+			}),
+			// The adapter turns off asynchronously; wait so the re-check sees it.
+			enforce: () => [
+				"cmd bluetooth_manager disable",
+				"cmd bluetooth_manager wait-for-state:STATE_OFF",
+			],
+		},
+		settingRule({
+			id: "location_off",
+			describe: "Location off",
+			ns: "secure",
+			key: "location_mode",
+			want: "0",
+			severity: "critical",
+			autoFix: true,
+			safety: true,
+		}),
+	];
+}
+
+function screenRules(screen: Profile["screen"]): Rule[] {
+	const rules: Rule[] = [];
+	if (screen.stayOnWhileCharging !== undefined)
+		rules.push(
+			settingRule({
+				id: "stay_on_off",
+				describe: screen.stayOnWhileCharging
+					? "Screen stays on while charging"
+					: "Screen does not stay on while charging",
+				ns: "global",
+				key: "stay_on_while_plugged_in",
+				// 7: on AC, USB, and wireless power.
+				want: screen.stayOnWhileCharging ? "7" : "0",
+				severity: "info",
+				autoFix: false,
+				acceptDuringScreenSession: true,
+			}),
+		);
+	if (screen.autoBrightness !== undefined)
+		rules.push(
+			settingRule({
+				id: "brightness_manual",
+				describe: screen.autoBrightness
+					? "Automatic brightness"
+					: "Manual brightness",
+				ns: "system",
+				key: "screen_brightness_mode",
+				want: screen.autoBrightness ? "1" : "0",
+				severity: "info",
+				autoFix: false,
+			}),
+		);
+	if (screen.brightness !== undefined)
+		rules.push(
+			settingRule({
+				id: "brightness_low",
+				describe: `Brightness ${screen.brightness} of 255`,
+				ns: "system",
+				key: "screen_brightness",
+				want: String(screen.brightness),
+				severity: "info",
+				autoFix: false,
+			}),
+		);
+	if (screen.timeoutSeconds !== undefined)
+		rules.push(
+			settingRule({
+				id: "screen_timeout",
+				describe: `Screen turns off after ${screen.timeoutSeconds} s`,
+				ns: "system",
+				key: "screen_off_timeout",
+				want: String(screen.timeoutSeconds * 1000),
+				severity: "info",
+				autoFix: false,
+			}),
+		);
+	return rules;
+}
+
+function dataSaverRule(): Rule {
+	return {
 		id: "data_saver",
 		describe: "Data Saver on",
 		want: "restrict-background enabled",
@@ -470,31 +455,35 @@ export const RULES: readonly Rule[] = [
 						: "disabled",
 		}),
 		enforce: () => ["cmd netpolicy set restrict-background true"],
-	},
-	// Messages is deliberately not on the Data Saver allowlist (decided
-	// 2026-10-22). It downloads MMS through the platform MmsService
-	// in the phone process, a system uid Data Saver does not restrict
-	// (inferred), and allowlisting would only let Messages and RCS use data
-	// if data came on. Bring the rule back if an MMS download fails on a live
-	// test with data off and Data Saver on.
-	{
+	};
+}
+
+// The SMS app is deliberately not put on the Data Saver allowlist. Messages
+// downloads MMS through the platform MmsService in the phone process, a
+// system uid Data Saver does not restrict (inferred), and allowlisting would
+// only let it use data if data came on.
+function smsAppRule(app: string): Rule {
+	return {
 		id: "sms_role",
-		describe: "Google Messages is the default SMS app",
-		want: MESSAGES,
+		describe: `${APP_NAMES[app] ?? app} is the default SMS app`,
+		want: app,
 		severity: "critical",
 		autoFix: false,
 		check: (snapshot) => ({
 			ok:
 				snapshot.smsRoleHolders?.length === 1 &&
-				snapshot.smsRoleHolders[0] === MESSAGES,
+				snapshot.smsRoleHolders[0] === app,
 			observed: snapshot.smsRoleHolders?.join(", ") || "none",
 		}),
-		enforce: () => [`cmd role add-role-holder ${SMS_ROLE} ${MESSAGES}`],
-	},
-	{
+		enforce: () => [`cmd role add-role-holder ${SMS_ROLE} ${app}`],
+	};
+}
+
+function removeAppsRule(apps: readonly string[]): Rule {
+	return {
 		id: "debloat",
 		describe: "Unneeded apps removed",
-		want: `none of the ${REMOVE.length} listed apps installed for user 0`,
+		want: `none of the ${apps.length} listed apps installed for user 0`,
 		severity: "warning",
 		autoFix: false,
 		check: (snapshot) => ({
@@ -504,11 +493,14 @@ export const RULES: readonly Rule[] = [
 					? "none installed"
 					: `installed: ${snapshot.bloat.join(", ")}`,
 		}),
-		// Only names from REMOVE: parseSnapshot drops anything else.
+		// Only names from the profile: parseSnapshot drops anything else.
 		enforce: (snapshot) =>
 			snapshot.bloat.map((name) => `pm uninstall --user 0 ${name}`),
-	},
-	{
+	};
+}
+
+function mmsRule(): Rule {
+	return {
 		id: "mms_with_data_off",
 		describe: "MMS works with mobile data off, on every SIM",
 		want: "enabledMobileDataPolicies includes 2 (MMS_ALWAYS_ALLOWED)",
@@ -532,18 +524,27 @@ export const RULES: readonly Rule[] = [
 					.join(", "),
 			};
 		},
-	},
-	{
+	};
+}
+
+export function logBufferCommand(mib: number): string {
+	return `logcat -b main,system,radio,crash -G ${mib}M`;
+}
+
+// `logcat -G` resizes the buffers at once until the next reboot (measured on
+// the B30), so the drift checker sets it after every boot.
+function logBufferRule(mib: number): Rule {
+	return {
 		id: "log_buffer",
-		describe: "Radio log buffer at least 4 MiB",
-		want: "logcat -g -b radio reports a ring buffer of 4 MiB or more",
+		describe: `Radio log buffer at least ${mib} MiB`,
+		want: `logcat -g -b radio reports a ring buffer of ${mib} MiB or more`,
 		severity: "info",
 		autoFix: true,
-		// Expected after every reboot of the B30, so not "Setting reverted".
+		// Expected after every reboot on some phones, so not "Setting reverted".
 		fixEvent: "log_buffer_set",
 		instruction:
 			"The phone ignored the buffer size; it will be retried on the next check.",
-		enforce: () => [LOG_BUFFER_COMMAND],
+		enforce: () => [logBufferCommand(mib)],
 		check: (snapshot) =>
 			snapshot.radioBufferBytes === null
 				? {
@@ -553,11 +554,118 @@ export const RULES: readonly Rule[] = [
 							"Couldn't read the buffer size; it will be retried on the next check.",
 					}
 				: {
-						ok: snapshot.radioBufferBytes >= MIN_RADIO_BUFFER_BYTES,
+						ok: snapshot.radioBufferBytes >= mib * 1024 * 1024,
 						observed: formatBytes(snapshot.radioBufferBytes),
 					},
-	},
-];
+	};
+}
+
+export type Policy = {
+	// The profile's file name without .json.
+	name: string;
+	rules: readonly Rule[];
+	// Every read the rules and the data watch need, in one shell call.
+	readScript: string;
+	// The section the read prints last; its absence means a cut-short read.
+	lastSection: string;
+	// Namespaces the read lists; an empty one means the settings tool failed.
+	namespaces: Namespace[];
+	// Radios and data off: data-off on SIM changes, the next SIMs' data keys,
+	// and the data watch with its threshold. Null when the profile leaves
+	// radios alone.
+	radiosOff: { dataThresholdBytes: number } | null;
+	parse(stdout: string): Snapshot;
+};
+
+export function createPolicy(name: string, profile: Profile): Policy {
+	const rules: Rule[] = [];
+	if (profile.radiosOff) rules.push(...radioRules());
+	if (profile.disableSystemUpdates)
+		rules.push(
+			settingRule({
+				id: "ota_off",
+				describe: "Automatic system updates off",
+				ns: "global",
+				key: "ota_disable_automatic_update",
+				want: "1",
+				severity: "warning",
+				autoFix: false,
+			}),
+		);
+	rules.push(...screenRules(profile.screen));
+	if (profile.dataSaver) rules.push(dataSaverRule());
+	if (profile.smsApp) rules.push(smsAppRule(profile.smsApp));
+	if (profile.removeApps.length > 0)
+		rules.push(removeAppsRule(profile.removeApps));
+	if (profile.mmsWithDataOff) rules.push(mmsRule());
+	if (profile.radioLogBufferMiB)
+		rules.push(logBufferRule(profile.radioLogBufferMiB));
+
+	// grep trims the large outputs on the phone so only the lines read cross
+	// USB.
+	const keys = new Map<Namespace, string[]>();
+	for (const rule of rules)
+		for (const { ns, key } of rule.settings ?? [])
+			keys.set(ns, [...(keys.get(ns) ?? []), key]);
+	const namespaces = NAMESPACES.filter((ns) => keys.has(ns));
+	const reads: [string, string][] = [
+		...namespaces.map((ns): [string, string] => [
+			`settings:${ns}`,
+			`settings list ${ns} | grep -E '^(${keys.get(ns)?.join("|")})='`,
+		]),
+		["isub", "dumpsys isub"],
+		[
+			"registry",
+			"dumpsys telephony.registry | grep -E '^  Phone Id=|^    mIsDataEnabled='",
+		],
+	];
+	if (profile.dataSaver)
+		reads.push(["datasaver", "cmd netpolicy get restrict-background"]);
+	if (profile.smsApp)
+		reads.push(["smsrole", `cmd role get-role-holders ${SMS_ROLE}`]);
+	if (profile.removeApps.length > 0)
+		reads.push([
+			"bloat",
+			`pm list packages --user 0 | grep -xF ${profile.removeApps.map((app) => `-e package:${app}`).join(" ")}`,
+		]);
+	if (profile.radioLogBufferMiB) reads.push(["radiobuf", "logcat -g -b radio"]);
+	if (profile.radiosOff)
+		reads.push(
+			["clock", "date +%s"],
+			["netstats", "dumpsys netstats --full --uid"],
+		);
+	return {
+		name,
+		rules,
+		readScript: reads
+			.map(([section, command]) => `${sectionMarker(section)}; ${command}`)
+			.join("; "),
+		lastSection: reads.at(-1)?.[0] ?? "registry",
+		namespaces,
+		radiosOff: profile.radiosOff
+			? { dataThresholdBytes: profile.radiosOff.dataThresholdBytes }
+			: null,
+		parse: (stdout) => parseSnapshot(stdout, profile.removeApps),
+	};
+}
+
+// Reads and checks a profile file; throws with every problem named.
+export function loadPolicy(path: string): Policy {
+	let json: unknown;
+	try {
+		json = JSON.parse(readFileSync(path, "utf8"));
+	} catch (error) {
+		throw new Error(
+			`cannot read policy profile ${path}: ${error instanceof Error ? error.message : String(error)}`,
+		);
+	}
+	const result = Profile.safeParse(json);
+	if (!result.success)
+		throw new Error(
+			`invalid policy profile ${path}:\n${z.prettifyError(result.error)}`,
+		);
+	return createPolicy(basename(path, ".json"), result.data);
+}
 
 export type RuleResult = Omit<Outcome, "instruction"> & {
 	id: string;
@@ -572,7 +680,7 @@ export type RuleResult = Omit<Outcome, "instruction"> & {
 export function evaluate(
 	snapshot: Snapshot,
 	context: CheckContext,
-	rules: readonly Rule[] = RULES,
+	rules: readonly Rule[],
 ): RuleResult[] {
 	return rules.map((rule) => {
 		const { instruction, ...outcome } = rule.check(snapshot, context);
@@ -612,7 +720,7 @@ export function plan(
 	snapshot: Snapshot,
 	context: CheckContext,
 	which: (rule: Rule) => boolean,
-	rules: readonly Rule[] = RULES,
+	rules: readonly Rule[],
 ): { rule: string; commands: string[] }[] {
 	return rules
 		.filter((rule) => which(rule) && rule.enforce)
@@ -640,7 +748,8 @@ const ENABLING: [RegExp, string][] = [
 ];
 
 // Why `command` could turn a radio or data on, or null when it cannot. Every
-// command the monitor runs on a phone passes through this first.
+// command the monitor runs on a phone passes through this first, whatever
+// the profile.
 export function radioHazard(command: string): string | null {
 	for (const [pattern, reason] of ENABLING)
 		if (pattern.test(command)) return reason;

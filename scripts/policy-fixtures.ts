@@ -1,19 +1,21 @@
-// The monitor's part of scripts/capture-fixtures.ts: the policy's batched read
+// The monitor's part of scripts/capture-fixtures.ts: a policy's batched read
 // (settings, isub, netstats, ...) and a slice of the radio log, for
-// src/monitor/ tests. capture-fixtures.ts applies its identifier replacements
+// src/monitor/ tests. Use a profile with every rule group, such as
+// profiles/nuu-b30-no-data.json, so the read has every section. capture-fixtures.ts applies its identifier replacements
 // to these too; this adds what only these outputs carry.
 import type { AdbClient } from "../src/adb/client";
-import { READ_SCRIPT } from "../src/monitor/policy";
+import type { Policy } from "../src/monitor/policy";
 
 export async function capturePolicy(
 	adb: AdbClient,
 	serial: string,
+	policy: Policy,
 ): Promise<Record<string, string>> {
 	const text = async (command: string) =>
 		new TextDecoder().decode(
 			(await adb.shell(serial, command, { timeoutMs: 60_000 })).stdout,
 		);
-	const read = await text(READ_SCRIPT);
+	const read = await text(policy.readScript);
 	const radio = await text("logcat -b radio -d -v brief");
 	return {
 		"policy-read.txt": scrubRead(read),

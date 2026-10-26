@@ -24,6 +24,7 @@ import {
 	probeIdentity,
 	subscriberScript,
 } from "../src/devices/probe";
+import { loadPolicy } from "../src/monitor/policy";
 import {
 	decodeHex,
 	ISMS_TRIGGER_SCRIPT,
@@ -32,9 +33,12 @@ import {
 import { commands, MMS_COLUMNS, SMS_COLUMNS } from "../src/sms/provider";
 import { capturePolicy } from "./policy-fixtures";
 
-const [serial, outDir] = Bun.argv.slice(2);
+const [serial, outDir, profile = "profiles/nuu-b30-no-data.json"] =
+	Bun.argv.slice(2);
 if (!serial || !outDir) {
-	console.error("usage: bun scripts/capture-fixtures.ts SERIAL OUT_DIR");
+	console.error(
+		"usage: bun scripts/capture-fixtures.ts SERIAL OUT_DIR [PROFILE]",
+	);
 	process.exit(2);
 }
 const adb = new AdbClient(
@@ -301,7 +305,9 @@ const outputs: Record<string, string> = {
 	"mms-keys.txt": mmsKeysRaw,
 };
 
-for (const [name, body] of Object.entries(await capturePolicy(adb, serial)))
+for (const [name, body] of Object.entries(
+	await capturePolicy(adb, serial, loadPolicy(profile)),
+))
 	outputs[name] = sanitizeText(body);
 for (const [name, body] of Object.entries(outputs))
 	for (const secret of secrets)
