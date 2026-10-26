@@ -9,6 +9,8 @@ import { parseEnv } from "./env";
 import { Inventory } from "./inventory/store";
 import type { DeviceEventRow } from "./inventory/sync";
 import { log } from "./log";
+import { Monitor } from "./monitor/monitor";
+import { screenSessionActive } from "./monitor/screen-sessions";
 import { loadServerJar } from "./screens/jar";
 import { ScreenManager } from "./screens/manager";
 import { SmsIngest } from "./sms/ingest";
@@ -50,17 +52,29 @@ const screens = new ScreenManager({
 	jar: await loadServerJar(),
 	log,
 });
+const monitor = new Monitor({
+	devices,
+	db,
+	events,
+	log,
+	checkIntervalMs: config.POLICY_CHECK_INTERVAL_S * 1000,
+	healthIntervalMs: config.HEALTH_INTERVAL_S * 1000,
+	dataThresholdBytes: config.DATA_THRESHOLD_BYTES,
+	isScreenSessionActive: screenSessionActive(() => screens.list()),
+});
 const app = createApp({
 	inventory: new Inventory(db),
 	devices,
 	events,
 	messages: { store, bus: messages, attachmentsDir },
+	monitor,
 	webDir: resolve(config.WEB_DIR),
 	version,
 	screens,
 });
 
 sms.start();
+monitor.start();
 devices.start();
 app.listen({ hostname: config.HOST, port: config.PORT });
 log("listening", {
@@ -79,6 +93,7 @@ for (const signal of ["SIGTERM", "SIGINT"] as const)
 		await screens.stop();
 		await app.stop();
 		await sms.stop();
+		await monitor.stop();
 		await devices.stop();
 		db.close();
 		process.exit(0);

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { Alert, PhonePolicy } from "./monitor-schema";
 
 // The HTTP contract. The web UI imports only the inferred types from here.
 
@@ -184,8 +185,11 @@ export const Status = z.object({
 			healthAt: iso.nullable(),
 			identityAt: iso.nullable(),
 			probeError: z.string().nullable(),
+			policy: PhonePolicy.nullable(),
 		}),
 	),
+	alerts: z.array(Alert),
+	dataThresholdBytes: z.number().int().nullable(),
 });
 
 export const Health = z.object({
@@ -198,6 +202,7 @@ export const Health = z.object({
 		.describe(
 			"Known phones that are not online, including ones waiting for auth",
 		),
+	alerts: z.number().int().describe("Open alerts"),
 	version: z.string(),
 });
 

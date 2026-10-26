@@ -97,6 +97,7 @@ test("healthz summarizes adb and phones", async () => {
 		adbReachable: true,
 		phonesOnline: 1,
 		phonesOffline: 0,
+		alerts: 0,
 		version: "test",
 	});
 });

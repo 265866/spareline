@@ -12,11 +12,13 @@ import {
 	NotFoundError,
 } from "../inventory/store";
 import type { DeviceEventRow } from "../inventory/sync";
+import type { Monitor } from "../monitor/monitor";
 import type { ScreenManager } from "../screens/manager";
 import { MAX_VIEWER_MESSAGE_BYTES } from "../screens/protocol";
 import { screenRoutes } from "../screens/routes";
 import { BadRequestError } from "./errors";
 import { type MessageOptions, messageRoutes } from "./messages";
+import { monitorRoutes } from "./monitor";
 import {
 	ApiError,
 	Health,
@@ -41,6 +43,8 @@ export type AppOptions = {
 	devices: Devices;
 	events: Bus<DeviceEventRow>;
 	messages: MessageOptions;
+	// Phone policy, drift, and alerts; null serves none of them.
+	monitor?: Monitor | null;
 	// Built SPA (bun run build); null serves no UI.
 	webDir: string | null;
 	version: string;
@@ -57,6 +61,7 @@ const LOGIN_HEADER = "tailscale-user-login";
 
 export function createApp(options: AppOptions) {
 	const { inventory, devices } = options;
+	const monitor = options.monitor ?? null;
 	const login = (headers: Record<string, string | undefined>) =>
 		headers[LOGIN_HEADER] ?? null;
 
@@ -203,16 +208,20 @@ export function createApp(options: AppOptions) {
 					healthAt: phone.healthAt,
 					identityAt: phone.identityAt,
 					probeError: phone.probeError,
+					policy: monitor?.phone(phone.serial) ?? null,
 				})),
+				alerts: monitor?.alerts() ?? [],
+				dataThresholdBytes: monitor?.dataThresholdBytes ?? null,
 			}),
 			{
 				response: { 200: Status },
 				detail: {
-					summary: "Live adb and phone state",
+					summary: "Live adb and phone state, policy results, and alerts",
 					tags: ["status"],
 				},
 			},
 		)
+		.use(monitorRoutes(monitor))
 		.get(
 			"/events",
 			({ query, headers, request, server }) => {
@@ -322,6 +331,7 @@ export function createApp(options: AppOptions) {
 					adbReachable: adb.reachable,
 					phonesOnline: online,
 					phonesOffline: known.length - online,
+					alerts: monitor?.alerts().length ?? 0,
 					version: options.version,
 				};
 			},
