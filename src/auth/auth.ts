@@ -2,10 +2,36 @@ import type { Database } from "bun:sqlite";
 
 export type User = { id: number; name: string; createdAt: string };
 
+export type KeyScope = "read" | "full";
+
+export type ApiKey = {
+	id: number;
+	user: string;
+	name: string;
+	scope: KeyScope;
+	// The key's first characters, to tell keys apart.
+	prefix: string;
+	createdAt: string;
+	lastUsedAt: string | null;
+	revokedAt: string | null;
+};
+
 // Who a request acts for.
-export type Principal = { kind: "session"; user: User; sessionId: number };
+export type Principal =
+	| { kind: "session"; user: User; sessionId: number }
+	| {
+			kind: "key";
+			user: User;
+			keyId: number;
+			keyName: string;
+			scope: KeyScope;
+	  };
+export type SessionPrincipal = Extract<Principal, { kind: "session" }>;
 
 export const SESSION_COOKIE = "spareline_session";
+export const KEY_PREFIX = "sl_";
+// last_used_at of a key is written at most this often.
+const KEY_TOUCH_MS = 60_000;
 // A session lasts this long after it was last used.
 export const SESSION_DAYS = 30;
 // last_seen_at is written at most this often per session.
@@ -59,7 +85,8 @@ export class Auth {
 		private readonly now: () => Date = () => new Date(),
 	) {}
 
-	// Calls `listener` after anything in this process that can end a session.
+	// Calls `listener` after anything in this process that can end a session
+	// or a key.
 	// Open streams and sockets re-check their principal then (and on a timer,
 	// for changes another process such as the CLI made).
 	onChange(listener: () => void): () => void {
@@ -73,8 +100,15 @@ export class Auth {
 		for (const listener of [...this.listeners]) listener();
 	}
 
-	// Whether the principal's session still exists and has not expired.
+	// Whether the principal's session still exists and has not expired, or
+	// its key is not revoked.
 	valid(principal: Principal): boolean {
+		if (principal.kind === "key")
+			return (
+				this.db
+					.query("SELECT 1 FROM api_keys WHERE id = ? AND revoked_at IS NULL")
+					.get(principal.keyId) !== null
+			);
 		return (
 			this.db
 				.query("SELECT 1 FROM sessions WHERE id = ? AND expires_at > ?")
@@ -201,7 +235,7 @@ export class Auth {
 
 	// The session's user while it is unexpired. Using it extends it, at most
 	// hourly; `renewed` is called then, so the cookie can be renewed too.
-	session(token: string, renewed?: () => void): Principal | null {
+	session(token: string, renewed?: () => void): SessionPrincipal | null {
 		const row = this.db
 			.query<
 				UserRow & {
@@ -242,6 +276,115 @@ export class Auth {
 			this.now().toISOString(),
 		]);
 		this.changed();
+	}
+
+	// Creates a key for the user and returns it once; only its hash is kept.
+	createKey(
+		userId: number,
+		name: string,
+		scope: KeyScope,
+	): { key: string; apiKey: ApiKey } {
+		const clean = name.trim();
+		if (clean.length < 1 || clean.length > 64)
+			throw new AuthError("a key name is 1-64 characters");
+		const key = `${KEY_PREFIX}${randomToken()}`;
+		const row = this.db
+			.query<{ id: number }, [number, string, string, string, string, string]>(
+				"INSERT INTO api_keys (user_id, name, scope, prefix, key_sha256, created_at) VALUES (?, ?, ?, ?, ?, ?) RETURNING id",
+			)
+			.get(
+				userId,
+				clean,
+				scope,
+				key.slice(0, KEY_PREFIX.length + 6),
+				sha256(key),
+				this.now().toISOString(),
+			);
+		const apiKey = this.listKeys().find(
+			(candidate) => candidate.id === row?.id,
+		);
+		if (!apiKey) throw new Error("key insert returned no row");
+		return { key, apiKey };
+	}
+
+	// Every key, revoked ones included, newest first.
+	listKeys(): ApiKey[] {
+		return this.db
+			.query<
+				{
+					id: number;
+					user: string;
+					name: string;
+					scope: KeyScope;
+					prefix: string;
+					created_at: string;
+					last_used_at: string | null;
+					revoked_at: string | null;
+				},
+				[]
+			>(
+				`SELECT k.id, u.name AS user, k.name, k.scope, k.prefix, k.created_at, k.last_used_at, k.revoked_at
+				FROM api_keys k JOIN users u ON u.id = k.user_id ORDER BY k.id DESC`,
+			)
+			.all()
+			.map((row) => ({
+				id: row.id,
+				user: row.user,
+				name: row.name,
+				scope: row.scope,
+				prefix: row.prefix,
+				createdAt: row.created_at,
+				lastUsedAt: row.last_used_at,
+				revokedAt: row.revoked_at,
+			}));
+	}
+
+	revokeKey(id: number): ApiKey {
+		this.db.run(
+			"UPDATE api_keys SET revoked_at = ? WHERE id = ? AND revoked_at IS NULL",
+			[this.now().toISOString(), id],
+		);
+		this.changed();
+		const key = this.listKeys().find((candidate) => candidate.id === id);
+		if (!key) throw new AuthError(`no API key ${id}`);
+		return key;
+	}
+
+	// The key's owner while the key is not revoked; using it is recorded.
+	keyPrincipal(key: string): Principal | null {
+		if (!key.startsWith(KEY_PREFIX)) return null;
+		const row = this.db
+			.query<
+				UserRow & {
+					key_id: number;
+					key_name: string;
+					scope: KeyScope;
+					last_used_at: string | null;
+				},
+				[string]
+			>(
+				`SELECT u.id, u.name, u.created_at, k.id AS key_id, k.name AS key_name, k.scope, k.last_used_at
+				FROM api_keys k JOIN users u ON u.id = k.user_id
+				WHERE k.key_sha256 = ? AND k.revoked_at IS NULL`,
+			)
+			.get(sha256(key));
+		if (!row) return null;
+		const now = this.now();
+		if (
+			row.last_used_at === null ||
+			now.getTime() - Date.parse(row.last_used_at) >= KEY_TOUCH_MS
+		)
+			this.db.run("UPDATE api_keys SET last_used_at = ? WHERE id = ?", [
+				now.toISOString(),
+				row.key_id,
+			]);
+		return {
+			kind: "key",
+			user: toUser(row),
+			keyId: row.key_id,
+			keyName: row.key_name,
+			scope: row.scope,
+		};
 	}
 }
 

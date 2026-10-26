@@ -1,11 +1,13 @@
 import { type FormEvent, useState } from "react";
 import { api } from "../api";
+import { ApiKeys } from "../components/keys";
 
 export function SettingsPage({ name }: { name: string }) {
 	return (
 		<div className="flex max-w-xl flex-col gap-6">
 			<h1 className="text-xl font-semibold">Settings</h1>
 			<PasswordForm name={name} />
+			<ApiKeys />
 		</div>
 	);
 }

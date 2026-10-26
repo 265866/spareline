@@ -4,6 +4,9 @@
 //   bun src/cli.ts users list
 //   bun src/cli.ts users reset-password NAME  prints a new one, signs out
 //   bun src/cli.ts users remove NAME
+//   bun src/cli.ts keys add USER KEY_NAME read|full   prints the key once
+//   bun src/cli.ts keys list
+//   bun src/cli.ts keys revoke ID
 //
 // It opens the database in DATA_DIR, like the server, which may keep running.
 // In the container: podman exec spareline bun src/cli.ts users add NAME
@@ -16,7 +19,10 @@ const USAGE = `usage:
   bun src/cli.ts users add NAME
   bun src/cli.ts users list
   bun src/cli.ts users reset-password NAME
-  bun src/cli.ts users remove NAME`;
+  bun src/cli.ts users remove NAME
+  bun src/cli.ts keys add USER KEY_NAME read|full
+  bun src/cli.ts keys list
+  bun src/cli.ts keys revoke ID`;
 
 export async function run(
 	args: string[],
@@ -24,6 +30,7 @@ export async function run(
 	print: (line: string) => void,
 ): Promise<number> {
 	const [group, command, name] = args;
+	if (group === "keys") return keys(args.slice(1), auth, print);
 	if (group !== "users") {
 		print(USAGE);
 		return 2;
@@ -50,6 +57,55 @@ export async function run(
 		if (command === "remove" && name) {
 			auth.removeUser(name);
 			print(`Removed ${name} and ended their sessions.`);
+			return 0;
+		}
+	} catch (error) {
+		if (!(error instanceof AuthError)) throw error;
+		print(error.message);
+		return 1;
+	}
+	print(USAGE);
+	return 2;
+}
+
+function keys(args: string[], auth: Auth, print: (line: string) => void) {
+	const [command, user, keyName, scope] = args;
+	try {
+		if (command === "list" && args.length === 1) {
+			const all = auth.listKeys();
+			if (all.length === 0) print("No API keys yet.");
+			for (const key of all)
+				print(
+					[
+						key.id,
+						key.prefix,
+						key.user,
+						key.name,
+						key.scope,
+						key.revokedAt
+							? `revoked ${key.revokedAt}`
+							: `last used ${key.lastUsedAt ?? "never"}`,
+					].join("\t"),
+				);
+			return 0;
+		}
+		if (
+			command === "add" &&
+			user &&
+			keyName &&
+			(scope === "read" || scope === "full")
+		) {
+			const owner = auth.findUser(user);
+			if (!owner) throw new AuthError(`no user ${user}`);
+			const { key, apiKey } = auth.createKey(owner.id, keyName, scope);
+			print(
+				`Added ${apiKey.scope} key ${apiKey.id} "${apiKey.name}" for ${owner.name}. Key (shown once): ${key}`,
+			);
+			return 0;
+		}
+		if (command === "revoke" && user && /^\d+$/.test(user)) {
+			const key = auth.revokeKey(Number(user));
+			print(`Revoked key ${key.id} "${key.name}".`);
 			return 0;
 		}
 	} catch (error) {

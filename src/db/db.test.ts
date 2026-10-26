@@ -24,6 +24,7 @@ afterEach(() => {
 });
 
 const EXPECTED_TABLES = [
+	"api_keys",
 	"attachments",
 	"control_sessions",
 	"device_events",
