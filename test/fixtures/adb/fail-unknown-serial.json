@@ -1,0 +1,17 @@
+{
+	"description": "host:transport to a serial that is not attached",
+	"recordedAt": "2026-10-22T06:23:16.281Z",
+	"outcome": "error: AdbError: host:transport:NOSUCHSERIAL: device 'NOSUCHSERIAL' not found",
+	"connections": [
+		[
+			{
+				"from": "client",
+				"hex": "30303162686f73743a7472616e73706f72743a4e4f5355434853455249414c"
+			},
+			{
+				"from": "server",
+				"hex": "4641494c3030316664657669636520274e4f5355434853455249414c27206e6f7420666f756e64"
+			}
+		]
+	]
+}

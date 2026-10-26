@@ -1,0 +1,17 @@
+{
+	"description": "host:devices-l with one phone attached",
+	"recordedAt": "2026-10-22T06:23:12.379Z",
+	"outcome": "ok: [{\"serial\":\"SPARELINE00001\",\"state\":\"device\",\"rawState\":\"device\",\"usb\":\"1-1\",\"product\":\"S6702X1\",\"model\":\"S6702X\",\"device\":\"S6702XA\",\"transportId\":1}]",
+	"connections": [
+		[
+			{
+				"from": "client",
+				"hex": "30303065686f73743a646576696365732d6c"
+			},
+			{
+				"from": "server",
+				"hex": "4f4b41593030363153504152454c494e453030303031202020202020202020646576696365207573623a312d312070726f647563743a53363730325831206d6f64656c3a533637303258206465766963653a53363730325841207472616e73706f72745f69643a310a"
+			}
+		]
+	]
+}

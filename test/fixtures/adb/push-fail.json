@@ -1,0 +1,33 @@
+{
+	"description": "sync: SEND to a read-only path",
+	"recordedAt": "2026-10-22T06:23:16.075Z",
+	"outcome": "error: AdbError: push /system/sl-denied.bin: couldn't create file: Read-only file system",
+	"connections": [
+		[
+			{
+				"from": "client",
+				"hex": "30303164686f73743a7472616e73706f72743a53504152454c494e453030303031"
+			},
+			{
+				"from": "server",
+				"hex": "4f4b4159"
+			},
+			{
+				"from": "client",
+				"hex": "3030303573796e633a"
+			},
+			{
+				"from": "server",
+				"hex": "4f4b4159"
+			},
+			{
+				"from": "client",
+				"hex": "53454e441b0000002f73797374656d2f736c2d64656e6965642e62696e2c33333138384441544103000000010203444f4e45d3abd96a"
+			},
+			{
+				"from": "server",
+				"hex": "4641494c2b000000636f756c646e2774206372656174652066696c653a20526561642d6f6e6c792066696c652073797374656d"
+			}
+		]
+	]
+}

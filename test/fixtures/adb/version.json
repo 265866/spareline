@@ -1,0 +1,17 @@
+{
+	"description": "host:version",
+	"recordedAt": "2026-10-22T06:23:12.173Z",
+	"outcome": "ok: 41",
+	"connections": [
+		[
+			{
+				"from": "client",
+				"hex": "30303063686f73743a76657273696f6e"
+			},
+			{
+				"from": "server",
+				"hex": "4f4b41593030303430303239"
+			}
+		]
+	]
+}
