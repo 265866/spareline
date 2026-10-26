@@ -168,3 +168,23 @@ CREATE TABLE control_sessions (
 	rejected INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX control_sessions_phone ON control_sessions (phone_id, started_at);
+
+-- Five-minute health aggregates (src/monitor/), one row per phone per
+-- bucket, written from the in-memory samples so the SD card sees few writes.
+CREATE TABLE health_5m (
+	phone_id INTEGER NOT NULL REFERENCES phones (id),
+	-- Start of the bucket, ISO 8601 UTC.
+	bucket TEXT NOT NULL,
+	samples INTEGER NOT NULL CHECK (samples > 0),
+	-- Mean battery level and highest temperature (tenths of a degree C).
+	battery_pct INTEGER,
+	battery_temp_dc INTEGER,
+	-- By slot: {"0": {"minLevel": 2, "dbm": -110}}.
+	signal_json TEXT NOT NULL DEFAULT '{}',
+	-- By slot: share of samples in service, {"0": 1}.
+	service_json TEXT NOT NULL DEFAULT '{}',
+	-- Internet mobile bytes over the trailing 24 h at the last data watch.
+	mobile_rx INTEGER,
+	mobile_tx INTEGER,
+	PRIMARY KEY (phone_id, bucket)
+) WITHOUT ROWID;
