@@ -1,7 +1,10 @@
-# Same glibc aarch64 Bun build that runs on the Pi's 16 KB-page kernel.
+# Bun's glibc images for amd64 and arm64; the arm64 build also runs on a
+# Raspberry Pi 5's 16 KB-page kernel.
 ARG BUN_IMAGE=docker.io/oven/bun:1.4.3-slim@sha256:14a223fa35747ec728bce300ef85888bc5f7958164d15bbba6a54b22b52a3288
 
-FROM ${BUN_IMAGE} AS build
+# The web bundle is the same for every platform, so it is built once, on the
+# builder's own platform.
+FROM --platform=$BUILDPLATFORM ${BUN_IMAGE} AS build
 WORKDIR /app
 COPY package.json bun.lock ./
 RUN bun install --frozen-lockfile

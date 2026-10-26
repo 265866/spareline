@@ -150,7 +150,7 @@ To support a new phone model, record its fixtures with `scripts/capture-fixtures
 
 ## Deploy
 
-After CI passes on `main`, GitHub Actions builds `linux/arm64` natively and pushes `ghcr.io/265866/spareline:sha-<commit>`, and moves `:main` to it while that commit is still the head of `main`. On the host, a rootless Podman quadlet runs the image as `spareline.service`, and hourly timers pull and apply new images. [deploy/podman/README.md](deploy/podman/README.md) covers install, updates, backups, and restore.
+After CI passes on `main`, GitHub Actions builds one image for `linux/arm64` and `linux/amd64` and pushes `ghcr.io/265866/spareline:sha-<commit>`, and moves `:main` to it while that commit is still the head of `main`. On the host, a rootless Podman quadlet runs the image as `spareline.service`, and hourly timers pull and apply new images. [deploy/podman/README.md](deploy/podman/README.md) covers install, updates, backups, and restore.
 
 ## Layout
 
