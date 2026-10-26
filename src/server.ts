@@ -9,6 +9,8 @@ import { parseEnv } from "./env";
 import { Inventory } from "./inventory/store";
 import type { DeviceEventRow } from "./inventory/sync";
 import { log } from "./log";
+import { loadServerJar } from "./screens/jar";
+import { ScreenManager } from "./screens/manager";
 import { SmsIngest } from "./sms/ingest";
 import { type Message, MessageStore } from "./sms/store";
 
@@ -42,6 +44,12 @@ const sms = new SmsIngest({
 	attachmentsDir,
 	log,
 });
+const screens = new ScreenManager({
+	devices,
+	db,
+	jar: await loadServerJar(),
+	log,
+});
 const app = createApp({
 	inventory: new Inventory(db),
 	devices,
@@ -49,6 +57,7 @@ const app = createApp({
 	messages: { store, bus: messages, attachmentsDir },
 	webDir: resolve(config.WEB_DIR),
 	version,
+	screens,
 });
 
 sms.start();
@@ -67,6 +76,7 @@ for (const signal of ["SIGTERM", "SIGINT"] as const)
 		if (stopping) return;
 		stopping = true;
 		log("stopping", { signal });
+		await screens.stop();
 		await app.stop();
 		await sms.stop();
 		await devices.stop();
