@@ -24,8 +24,11 @@ afterEach(() => {
 });
 
 const EXPECTED_TABLES = [
+	"attachments",
 	"device_events",
+	"ingest_cursors",
 	"inventory_edits",
+	"messages",
 	"number_bindings",
 	"numbers",
 	"phones",
