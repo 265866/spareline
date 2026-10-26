@@ -1,0 +1,8 @@
+[Unit]
+Description=Check for a new spareline image and apply it
+
+[Service]
+Type=oneshot
+ExecStart=%h/services/spareline/update.sh
+TimeoutStartSec=60min
+UMask=0077

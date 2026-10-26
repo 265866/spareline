@@ -1,0 +1,13 @@
+node_modules
+dist
+data
+artifacts
+.env
+.env.*
+*.db
+*.db-*
+.git
+.github
+deploy
+test
+**/*.test.ts

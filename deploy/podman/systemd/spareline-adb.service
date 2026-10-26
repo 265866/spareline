@@ -1,0 +1,11 @@
+[Unit]
+Description=adb server for spareline (owns USB, listens on localhost:5037)
+
+[Service]
+Environment=ADB_LIBUSB=0
+ExecStart=/usr/bin/adb -L tcp:localhost:5037 nodaemon server
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=default.target

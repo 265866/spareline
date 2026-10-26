@@ -1,0 +1,11 @@
+[Unit]
+Description=Hourly spareline image update check
+
+[Timer]
+OnCalendar=hourly
+RandomizedDelaySec=5min
+Persistent=true
+Unit=spareline-update.service
+
+[Install]
+WantedBy=timers.target
