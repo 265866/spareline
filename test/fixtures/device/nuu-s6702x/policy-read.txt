@@ -1,0 +1,264 @@
+
+@@sl:settings:global
+ble_scan_always_enabled=0
+bluetooth_on=0
+data_roaming1=0
+data_roaming=0
+mobile_data1=0
+mobile_data=0
+ota_disable_automatic_update=1
+stay_on_while_plugged_in=0
+wifi_on=0
+wifi_scan_always_enabled=0
+wifi_wakeup_enabled=0
+
+@@sl:settings:secure
+location_mode=0
+
+@@sl:settings:system
+screen_brightness=10
+screen_brightness_mode=0
+screen_off_timeout=15000
+
+@@sl:isub
+SubscriptionManagerService:
+Active modem count=2
+Logical SIM slot sub id mapping:
+  Logical SIM slot 0: subId=1
+ICCID:
+  slot 0: 890155500[****]
+  slot 1: N/A
+
+defaultSubId=1
+defaultVoiceSubId=1
+defaultDataSubId=1
+activeDataSubId=1
+defaultSmsSubId=1
+areAllSubscriptionsLoaded=true
+
+mSimState[0]=LOADED
+mSimState[1]=ABSENT
+
+Active subscriptions:
+  [MtkSubscriptionInfoInternal: isEnhancedVonrShowUiEnabled=-1][SubscriptionInfoInternal: id=1 iccId=890155500[****] simSlotIndex=0 portIndex=0 isEmbedded=0 isRemovableEmbedded=0 carrierId=1 displayName=T-Mobile carrierName=Emergency calls only isOpportunistic=0 groupUuid= groupOwner= displayNameSource=UNKNOWN iconTint=-6728704 number=[****] dataRoaming=0 mcc=310 mnc=240 ehplmns=310260,310240 hplmns=310260,310260,310260,310260 cardString=890155500[****] cardId=0 nativeAccessRules= carrierConfigAccessRules=00000001000000040000002092B5F8117FBD9BD5738FF168A4FA12CBE284BE834EDE1A7BB44DD8455BA15920000000000000000000000000203D1A4BEF6EE7AF7D34D120E7B1AAC0DD245585DE6237CF100F68333AFACFF562000000000000000000000000206892793FC413019D2DF609DFED7AF622D0F2D8FCF96EFA7E3FB87EEA34E10B93000000000000000000000000207B68FD9D4E7610C9CB35FC0C6CC06EA04C6906E3DFA9F48F9A05460AF36BFFFC000000000000000000 countryIso=us profileClass=-1 type=LOCAL_SIM areUiccApplicationsEnabled=1 usageSetting=DEFAULT isEnhanced4GModeEnabled=-1 isVideoTelephonyEnabled=-1 isWifiCallingEnabled=-1 isWifiCallingEnabledForRoaming=-1 wifiCallingMode=UNKNOWN wifiCallingModeForRoaming=UNKNOWN enabledMobileDataPolicies=2 imsi=310240001[****] rcsUceEnabled=0 crossSimCallingEnabled=0 rcsConfig= allowedNetworkTypesForReasons=user=64511 deviceToDeviceStatusSharingPreference=0 isVoImsOptInEnabled=0 deviceToDeviceStatusSharingContacts= numberFromCarrier= numberFromIms=[****] userId=-10000 isSatelliteEnabled=-1 isGroupDisabled=false]
+
+All subscriptions:
+  [MtkSubscriptionInfoInternal: isEnhancedVonrShowUiEnabled=-1][SubscriptionInfoInternal: id=1 iccId=890155500[****] simSlotIndex=0 portIndex=0 isEmbedded=0 isRemovableEmbedded=0 carrierId=1 displayName=T-Mobile carrierName=Emergency calls only isOpportunistic=0 groupUuid= groupOwner= displayNameSource=UNKNOWN iconTint=-6728704 number=[****] dataRoaming=0 mcc=310 mnc=240 ehplmns=310260,310240 hplmns=310260,310260,310260,310260 cardString=890155500[****] cardId=0 nativeAccessRules= carrierConfigAccessRules=00000001000000040000002092B5F8117FBD9BD5738FF168A4FA12CBE284BE834EDE1A7BB44DD8455BA15920000000000000000000000000203D1A4BEF6EE7AF7D34D120E7B1AAC0DD245585DE6237CF100F68333AFACFF562000000000000000000000000206892793FC413019D2DF609DFED7AF622D0F2D8FCF96EFA7E3FB87EEA34E10B93000000000000000000000000207B68FD9D4E7610C9CB35FC0C6CC06EA04C6906E3DFA9F48F9A05460AF36BFFFC000000000000000000 countryIso=us profileClass=-1 type=LOCAL_SIM areUiccApplicationsEnabled=1 usageSetting=DEFAULT isEnhanced4GModeEnabled=-1 isVideoTelephonyEnabled=-1 isWifiCallingEnabled=-1 isWifiCallingEnabledForRoaming=-1 wifiCallingMode=UNKNOWN wifiCallingModeForRoaming=UNKNOWN enabledMobileDataPolicies=2 imsi=310240001[****] rcsUceEnabled=0 crossSimCallingEnabled=0 rcsConfig= allowedNetworkTypesForReasons=user=64511 deviceToDeviceStatusSharingPreference=0 isVoImsOptInEnabled=0 deviceToDeviceStatusSharingContacts= numberFromCarrier= numberFromIms=[****] userId=-10000 isSatelliteEnabled=-1 isGroupDisabled=false]
+
+Embedded subscriptions: []
+Opportunistic subscriptions: []
+getAvailableSubscriptionInfoList: [1]
+getSelectableSubscriptionInfoList: [1]
+Euicc enabled=false
+
+Local log:
+  2026-10-21T19:41:58.802425 - Created SubscriptionManagerService
+  2026-10-21T19:41:58.828927 - Registered iSub service
+  2026-10-21T19:41:59.295652 - markSubscriptionsInactive: slot 0
+  2026-10-21T19:41:59.297768 - markSubscriptionsInactive: current mapping []
+  2026-10-21T19:41:59.297843 - markSubscriptionsInactive: slot 1
+  2026-10-21T19:41:59.298005 - markSubscriptionsInactive: current mapping []
+  2026-10-21T19:41:59.300296 - updateSubscription: current mapping [slot 0: subId=1]
+  2026-10-21T19:41:59.302188 - updateDefaultSubId: Default sub id updated from -1 to 1, phoneId=0
+  2026-10-21T19:42:00.419157 - updateSimState: slot 1 ABSENT
+  2026-10-21T19:42:00.450334 - updateSimState: slot 0 READY
+  2026-10-21T19:42:00.450805 - updateSubscription: current mapping [slot 0: subId=1]
+  2026-10-21T19:42:01.095864 - updateSimState: slot 0 LOADED
+  2026-10-21T19:42:01.096337 - updateSubscription: current mapping [slot 0: subId=1]
+  2026-10-21T19:42:01.098974 - setDisplayNumber: subId=1, number=[****], calling package=com.android.phone
+  2026-10-21T19:45:10.852504 - updateSimState: slot 0 READY
+  2026-10-21T19:45:10.853215 - updateSubscription: current mapping [slot 0: subId=1]
+  2026-10-21T19:45:11.747340 - updateSimState: slot 0 LOADED
+  2026-10-21T19:45:11.750610 - updateSubscription: current mapping [slot 0: subId=1]
+  2026-10-21T19:45:11.755361 - setDisplayNumber: subId=1, number=[****], calling package=com.android.phone
+  2026-10-21T19:50:11.559201 - updateSimState: slot 0 READY
+  2026-10-21T19:50:11.560099 - updateSubscription: current mapping [slot 0: subId=1]
+  2026-10-21T19:50:12.534932 - updateSimState: slot 0 LOADED
+  2026-10-21T19:50:12.535392 - updateSubscription: current mapping [slot 0: subId=1]
+  2026-10-21T19:50:12.536874 - setDisplayNumber: subId=1, number=[****], calling package=com.android.phone
+
+SubscriptionDatabaseManager:
+  All subscriptions:
+    [MtkSubscriptionInfoInternal: isEnhancedVonrShowUiEnabled=-1][SubscriptionInfoInternal: id=1 iccId=890155500[****] simSlotIndex=0 portIndex=0 isEmbedded=0 isRemovableEmbedded=0 carrierId=1 displayName=T-Mobile carrierName=Emergency calls only isOpportunistic=0 groupUuid= groupOwner= displayNameSource=UNKNOWN iconTint=-6728704 number=[****] dataRoaming=0 mcc=310 mnc=240 ehplmns=310260,310240 hplmns=310260,310260,310260,310260 cardString=890155500[****] cardId=0 nativeAccessRules= carrierConfigAccessRules=00000001000000040000002092B5F8117FBD9BD5738FF168A4FA12CBE284BE834EDE1A7BB44DD8455BA15920000000000000000000000000203D1A4BEF6EE7AF7D34D120E7B1AAC0DD245585DE6237CF100F68333AFACFF562000000000000000000000000206892793FC413019D2DF609DFED7AF622D0F2D8FCF96EFA7E3FB87EEA34E10B93000000000000000000000000207B68FD9D4E7610C9CB35FC0C6CC06EA04C6906E3DFA9F48F9A05460AF36BFFFC000000000000000000 countryIso=us profileClass=-1 type=LOCAL_SIM areUiccApplicationsEnabled=1 usageSetting=DEFAULT isEnhanced4GModeEnabled=-1 isVideoTelephonyEnabled=-1 isWifiCallingEnabled=-1 isWifiCallingEnabledForRoaming=-1 wifiCallingMode=UNKNOWN wifiCallingModeForRoaming=UNKNOWN enabledMobileDataPolicies=2 imsi=310240001[****] rcsUceEnabled=0 crossSimCallingEnabled=0 rcsConfig= allowedNetworkTypesForReasons=user=64511 deviceToDeviceStatusSharingPreference=0 isVoImsOptInEnabled=0 deviceToDeviceStatusSharingContacts= numberFromCarrier= numberFromIms=[****] userId=-10000 isSatelliteEnabled=-1 isGroupDisabled=false]
+  
+  mAsyncMode=true
+  mDatabaseInitialized=true
+  mReadWriteLock=java.util.concurrent.locks.ReentrantReadWriteLock@a65eeb7[Write locks = 0, Read locks = 0]
+  
+  Local log:
+2026-10-21T19:41:58.837065 - Loaded 1 records from the subscription database.
+
+@@sl:registry
+  Phone Id=0
+    mIsDataEnabled=false
+  Phone Id=1
+    mIsDataEnabled=false
+
+@@sl:datasaver
+Restrict background status: enabled
+
+@@sl:smsrole
+com.google.android.apps.messaging
+
+@@sl:bloat
+
+@@sl:radiobuf
+radio: ring buffer is 256 KiB (252 KiB consumed, 1 MiB readable), max entry is 5120 B, max payload is 4068 B
+
+@@sl:clock
+1792659282
+
+@@sl:netstats
+Directory:
+  /data/misc/apexdata/com.android.tethering/netstats
+Configs:
+  netstats_combine_subtype_enabled=false 
+  netstats_store_files_in_apexdata=true 
+  netstats_import_legacy_target_attempts=1 
+  platform legacy stats import attempts count=1 
+  platform legacy stats import successes count=1 
+  platform legacy stats import fallbacks count=0 
+Active interfaces:
+  iface=ccmni0 ident=[{type=0, ratType=0, subscriberId=310260..., metered=false, defaultNetwork=false, oemManaged=OEM_NONE, subId=1}] 
+  iface=vt_data01 ident=[{type=0, ratType=0, subscriberId=310260..., metered=true, defaultNetwork=true, oemManaged=OEM_NONE, subId=1}] 
+Active UID interfaces:
+  iface=ccmni0 ident=[{type=0, ratType=0, subscriberId=310260..., metered=false, defaultNetwork=false, oemManaged=OEM_NONE, subId=1}] 
+  iface=vt_data01 ident=[{type=0, ratType=0, subscriberId=310260..., metered=true, defaultNetwork=true, oemManaged=OEM_NONE, subId=1}] 
+All wifi interfaces:
+  
+All mobile interfaces:
+  ccmni0 ccmni1 
+Top openSession callers:
+  {uid=1000,package=android}=49
+  {uid=1000,package=com.android.settings}=1
+
+Stats Providers:
+  OffloadController Xt:
+    NetworkStats: elapsedRealtime=0
+  OffloadController Uid:
+    NetworkStats: elapsedRealtime=0
+  BpfCoordinator Xt:
+    NetworkStats: elapsedRealtime=0
+  BpfCoordinator Uid:
+    NetworkStats: elapsedRealtime=0
+  ImsPhoneCallTracker Xt:
+    NetworkStats: elapsedRealtime=0
+  ImsPhoneCallTracker Uid:
+    NetworkStats: elapsedRealtime=0
+  ImsPhoneCallTracker Xt:
+    NetworkStats: elapsedRealtime=0
+  ImsPhoneCallTracker Uid:
+    NetworkStats: elapsedRealtime=0
+  MobileDataUsage0 Xt:
+    NetworkStats: elapsedRealtime=0
+  MobileDataUsage0 Uid:
+    NetworkStats: elapsedRealtime=0
+  MobileDataUsage1 Xt:
+    NetworkStats: elapsedRealtime=0
+  MobileDataUsage1 Uid:
+    NetworkStats: elapsedRealtime=0
+
+Stats Observers:
+  RequestInfo from pid/uid:1345/1000(android) for DataUsageRequest [ requestId=1, networkTemplate=NetworkTemplate: matchRule=MOBILE, matchSubscriberIds=[], matchWifiNetworkKeys=[], thresholdInBytes=0 ] accessLevel:3
+  RequestInfo from pid/uid:1345/1000(android) for DataUsageRequest [ requestId=2, networkTemplate=NetworkTemplate: matchRule=WIFI, matchSubscriberIds=[], matchWifiNetworkKeys=[], thresholdInBytes=0 ] accessLevel:3
+
+Dev stats:
+  Pending bytes: 
+  Complete history:
+Xt stats:
+  Pending bytes: 908
+  Complete history:
+  ident=[{type=0, ratType=0, subscriberId=310260..., metered=false, defaultNetwork=false, oemManaged=OEM_NONE, subId=1}] uid=-1 set=ALL tag=0x0
+    NetworkStatsHistory: bucketDuration=3600
+      st=1792630800 rb=208 rp=2 tb=48 tp=1 op=0
+      st=1792634400 rb=0 rp=0 tb=48 tp=1 op=0
+  ident=[{type=0, ratType=13, subscriberId=310260..., metered=false, defaultNetwork=false, oemManaged=OEM_NONE, subId=1}] uid=-1 set=ALL tag=0x0
+    NetworkStatsHistory: bucketDuration=3600
+      st=1792630800 rb=832 rp=8 tb=0 tp=0 op=0
+      st=1792634400 rb=908 rp=10 tb=0 tp=0 op=0
+  ident=[{type=0, ratType=20, subscriberId=310260..., metered=false, defaultNetwork=false, oemManaged=OEM_NONE, subId=1}] uid=-1 set=ALL tag=0x0
+    NetworkStatsHistory: bucketDuration=3600
+      st=1792630800 rb=384 rp=4 tb=60 tp=1 op=0
+UID stats:
+  Pending bytes: 0
+  Complete history:
+  ident=[{type=0, ratType=0, subscriberId=310260..., metered=false, defaultNetwork=false, oemManaged=OEM_NONE, subId=1}] uid=0 set=DEFAULT tag=0x0
+    NetworkStatsHistory: bucketDuration=7200
+      st=1792627200 rb=0 rp=0 tb=48 tp=1 op=0
+      st=1792634400 rb=0 rp=0 tb=48 tp=1 op=0
+
+InterfaceMapUpdater:
+  BPF map status:
+    IfaceIndexNameMap: OK
+  BPF map content:
+    IfaceIndexNameMap:
+      ifaceIndex=24 ifaceName=dummy0
+      ifaceIndex=28 ifaceName=ip_vti0
+      ifaceIndex=20 ifaceName=ccmni18
+      ifaceIndex=21 ifaceName=ccmni19
+      ifaceIndex=23 ifaceName=ccmni-lan
+      ifaceIndex=5 ifaceName=ccmni3
+      ifaceIndex=29 ifaceName=ip6_vti0
+      ifaceIndex=18 ifaceName=ccmni16
+      ifaceIndex=22 ifaceName=ccmni20
+      ifaceIndex=13 ifaceName=ccmni11
+      ifaceIndex=1 ifaceName=lo
+      ifaceIndex=3 ifaceName=ccmni1
+      ifaceIndex=6 ifaceName=ccmni4
+      ifaceIndex=25 ifaceName=ifb0
+      ifaceIndex=16 ifaceName=ccmni14
+      ifaceIndex=7 ifaceName=ccmni5
+      ifaceIndex=30 ifaceName=sit0
+      ifaceIndex=4 ifaceName=ccmni2
+      ifaceIndex=8 ifaceName=ccmni6
+      ifaceIndex=15 ifaceName=ccmni13
+      ifaceIndex=2 ifaceName=ccmni0
+      ifaceIndex=26 ifaceName=ifb1
+      ifaceIndex=31 ifaceName=ip6tnl0
+      ifaceIndex=27 ifaceName=tunl0
+      ifaceIndex=9 ifaceName=ccmni7
+      ifaceIndex=19 ifaceName=ccmni17
+      ifaceIndex=17 ifaceName=ccmni15
+      ifaceIndex=11 ifaceName=ccmni9
+      ifaceIndex=14 ifaceName=ccmni12
+      ifaceIndex=12 ifaceName=ccmni10
+      ifaceIndex=10 ifaceName=ccmni8
+
+BPF map status:
+  mCookieTagMap: OK
+  mUidCounterSetMap: OK
+  mAppUidStatsMap: OK
+  mStatsMapA: OK
+  mStatsMapB: OK
+  mIfaceStatsMap: OK
+
+BPF map content:
+  mCookieTagMap:
+  mUidCounterSetMap:
+    uid=10114 set=1
+    uid=10152 set=1
+    uid=10190 set=1
+    uid=1073 set=1
+    uid=10148 set=1
+    uid=1001 set=1
+    uid=10101 set=1
+    uid=10178 set=1
+    uid=1068 set=1
+    uid=10094 set=1
+    uid=10157 set=1
+    uid=1000 set=1
+    uid=1027 set=1
+  mAppUidStatsMap:
+    uid rxBytes rxPackets txBytes txPackets
+    2000 1873636 1413 1873636 1413
+    0 0 0 984 18
+  mStatsMapA:
+    ifaceIndex ifaceName tag_hex uid_int cnt_set rxBytes rxPackets txBytes txPackets
+  mStatsMapB:
+    ifaceIndex ifaceName tag_hex uid_int cnt_set rxBytes rxPackets txBytes txPackets
+  mIfaceStatsMap:
+    ifaceIndex ifaceName rxBytes rxPackets txBytes txPackets
+    3 ccmni1 492 6 48 1
+    1 lo 1873636 1413 1873636 1413
+    24 dummy0 0 0 840 15
+    2 ccmni0 832 8 96 2
