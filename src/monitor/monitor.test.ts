@@ -1,4 +1,5 @@
 import { afterEach, expect, test } from "bun:test";
+import { B30_POLICY, LOG_BUFFER_COMMAND } from "../../test/b30-policy";
 import { recordedTrackLists } from "../../test/fake-adb";
 import {
 	B30,
@@ -9,7 +10,6 @@ import {
 } from "../../test/monitor-phone";
 import { fixture } from "../../test/replay-shell";
 import { HEALTH_SCRIPT, IDENTITY_SCRIPT } from "../devices/probe";
-import { LOG_BUFFER_COMMAND, READ_SCRIPT } from "./policy";
 import { SIM_LOG_COMMAND } from "./sims";
 
 // The phone is a MonitorPhone: the B30's recorded policy read, with the
@@ -400,7 +400,7 @@ function insertSim(phone: MonitorPhone, subId: number) {
 }
 
 const kindOf = (call: string) =>
-	call.endsWith(READ_SCRIPT)
+	call.endsWith(B30_POLICY.readScript)
 		? "read"
 		: call.includes("@@sl:run:")
 			? "apply"
@@ -685,4 +685,35 @@ test("a failed data-off for data over the threshold says so", async () => {
 	).toBe(
 		"Mobile data went over the threshold and turning mobile data off failed: adb: device offline",
 	);
+});
+
+test("without a policy: no reads or commands, set-up refused, health alerts still raised", async () => {
+	const { phone, monitor, devices, clock, readsAtConnect, atConnect } =
+		await start({ policy: null });
+	expect(readsAtConnect).toBe(0);
+	expect(atConnect).toEqual([]);
+	expect(monitor.phone(B30)?.check ?? null).toBeNull();
+	expect(monitor.dataThresholdBytes).toBeNull();
+	await expect(monitor.check(B30)).rejects.toThrow("no policy profile");
+	await expect(monitor.provision(B30)).rejects.toThrow("no policy profile");
+
+	// A SIM change still reaches the inventory, without any data-off.
+	await until(() => phone.streams.length === 1, "radio log stream");
+	const identityReads = () =>
+		phone.calls.filter((call) => call.endsWith(IDENTITY_SCRIPT)).length;
+	const before = identityReads();
+	insertSim(phone, 9);
+	phone.streams[0]?.push(
+		"D/RILJ    ( 1937): [UNSL]< MTK: RIL_UNSOL_SIM_PLUG_IN [PHONE1]\n",
+	);
+	await until(() => identityReads() > before, "identity refresh");
+	await monitor.settled();
+	expect(phone.applied).toEqual([]);
+	expect(phone.reads).toEqual([]);
+
+	phone.send([]);
+	await until(() => devices.get(B30)?.status !== "online", "offline");
+	clock.now = new Date(clock.now.getTime() + 6 * 60_000);
+	monitor.sampleHealth();
+	expect(monitor.alerts().map((alert) => alert.kind)).toEqual(["offline"]);
 });

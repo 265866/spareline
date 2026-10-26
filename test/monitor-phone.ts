@@ -6,8 +6,9 @@ import { parseIsub, splitSections } from "../src/devices/parse";
 import type { DeviceEventRow } from "../src/inventory/sync";
 import { silent } from "../src/log";
 import { Monitor, type MonitorOptions } from "../src/monitor/monitor";
-import { LOG_BUFFER_COMMAND, READ_SCRIPT } from "../src/monitor/policy";
+import { createPolicy, type Policy } from "../src/monitor/policy";
 import { SIM_STATE_COMMAND } from "../src/monitor/sims";
+import { B30_POLICY, B30_PROFILE, LOG_BUFFER_COMMAND } from "./b30-policy";
 import { FakeAdb, recordedTrackLists } from "./fake-adb";
 import { fixture } from "./replay-shell";
 
@@ -21,6 +22,8 @@ export class MonitorPhone extends FakeAdb {
 	// Every command the monitor ran through an apply script, in order.
 	readonly applied: string[] = [];
 	readonly reads: string[] = [];
+	// The policy read this phone answers with the recording.
+	readScript = B30_POLICY.readScript;
 	private sections = new Map<string, string>();
 	private order: string[] = [];
 	simState = "LOADED,ABSENT";
@@ -85,7 +88,7 @@ export class MonitorPhone extends FakeAdb {
 	override async shell(serial: string, command: string): Promise<ShellResult> {
 		if (this.hold) await this.hold;
 		this.calls.push(`${serial}: ${command}`);
-		if (command === READ_SCRIPT) {
+		if (command === this.readScript) {
 			this.reads.push(serial);
 			const output = this.order
 				.map((name) => `\n@@sl:${name}\n${this.section(name)}\n`)
@@ -199,7 +202,13 @@ export function withMeteredTraffic(
 	return lines.join("\n");
 }
 
-type Options = Partial<Omit<MonitorOptions, "devices" | "db" | "events">> & {
+type Options = Partial<
+	Omit<MonitorOptions, "devices" | "db" | "events" | "policy">
+> & {
+	// The B30 example profile unless given; null runs without a policy.
+	policy?: Policy | null;
+	// The B30 profile with another data threshold.
+	dataThresholdBytes?: number;
 	// Changes the phone before it comes online.
 	prepare?: (phone: MonitorPhone) => void;
 };
@@ -223,6 +232,17 @@ export async function startMonitor(options: Options = {}) {
 		identityRetryMs: [],
 		now,
 	});
+	const { dataThresholdBytes, prepare, ...rest } = options;
+	const policy =
+		dataThresholdBytes === undefined
+			? options.policy === undefined
+				? B30_POLICY
+				: options.policy
+			: createPolicy("nuu-b30-no-data", {
+					...B30_PROFILE,
+					radiosOff: { dataThresholdBytes },
+				});
+	if (policy) phone.readScript = policy.readScript;
 	const monitor = new Monitor({
 		devices,
 		db,
@@ -233,13 +253,16 @@ export async function startMonitor(options: Options = {}) {
 		simPollMs: 3_600_000,
 		simDebounceMs: 5,
 		now,
-		...options,
+		...rest,
+		policy,
 	});
-	options.prepare?.(phone);
+	prepare?.(phone);
 	monitor.start();
 	devices.start();
 	phone.send((await recordedTrackLists())[0] ?? []);
-	await until(() => monitor.phone(B30)?.check != null, "first monitor run");
+	if (policy)
+		await until(() => monitor.phone(B30)?.check != null, "first monitor run");
+	else await until(() => devices.get(B30)?.status === "online", "B30 online");
 	await devices.settled();
 	await monitor.settled();
 	// What the connect check wrote, then a clean slate for the test.

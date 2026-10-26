@@ -10,6 +10,7 @@ import { Inventory } from "./inventory/store";
 import type { DeviceEventRow } from "./inventory/sync";
 import { log } from "./log";
 import { Monitor } from "./monitor/monitor";
+import { loadPolicy, type Policy } from "./monitor/policy";
 import { screenSessionActive } from "./monitor/screen-sessions";
 import { loadServerJar } from "./screens/jar";
 import { ScreenManager } from "./screens/manager";
@@ -17,8 +18,10 @@ import { SmsIngest } from "./sms/ingest";
 import { type Message, MessageStore } from "./sms/store";
 
 let config: ReturnType<typeof parseEnv>;
+let policy: Policy | null;
 try {
 	config = parseEnv(process.env);
+	policy = config.POLICY_PROFILE ? loadPolicy(config.POLICY_PROFILE) : null;
 } catch (error) {
 	console.error(error instanceof Error ? error.message : String(error));
 	process.exit(1);
@@ -59,7 +62,7 @@ const monitor = new Monitor({
 	log,
 	checkIntervalMs: config.POLICY_CHECK_INTERVAL_S * 1000,
 	healthIntervalMs: config.HEALTH_INTERVAL_S * 1000,
-	dataThresholdBytes: config.DATA_THRESHOLD_BYTES,
+	policy,
 	isScreenSessionActive: screenSessionActive(() => screens.list()),
 });
 const app = createApp({
@@ -81,6 +84,7 @@ log("listening", {
 	url: `http://${config.HOST}:${config.PORT}`,
 	adb: `${config.ADB_SERVER.host}:${config.ADB_SERVER.port}`,
 	data: resolve(config.DATA_DIR),
+	policy: policy?.name ?? null,
 	version,
 });
 

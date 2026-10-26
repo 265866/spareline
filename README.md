@@ -38,21 +38,40 @@ A phone that shows **Needs approval** is waiting for someone to tap **Allow** on
 
 The server runs [scrcpy-server](https://github.com/Genymobile/scrcpy) 3.3.3 (`vendor/`) on a phone only while someone watches it, and stops it 30 seconds after the last viewer leaves. scrcpy keeps the phone awake during a session and restores `stay_on_while_plugged_in` afterwards. `GET /api/v1/screens` lists running sessions. Each opened screen is recorded in `control_sessions` with the Tailscale login and counts of inputs and typed texts, never the text itself.
 
-### Phone safety
+### Phone health and rules
 
-The phones must never use mobile data or Wi-Fi. One policy (`src/monitor/policy.ts`) drives both the drift check and **Set up phone**:
+Every phone gets health monitoring and alerts: a phone offline for more than 5 minutes, a SIM out of service for more than 30 minutes (cleared after three in-service samples), and a battery above 45 °C (cleared below 43 °C). Health is sampled every `HEALTH_INTERVAL_S` and stored as 5-minute aggregates (`health_5m`), kept 90 days. A SIM change is noticed within seconds (below) and read into the inventory. `GET /api/v1/status` lists the alerts with each phone's live state.
 
-- **Drift check**, when a phone comes online and every `POLICY_CHECK_INTERVAL_S`: one batched, read-only `adb shell` (about 0.6-0.75 s on a NUU B30) reads every rule and the phone's network stats. Radio and data drift (mobile data per SIM, roaming, Wi-Fi and its scanning and wake-up, Bluetooth and its scanning, location) is turned off on sight and logged as a `drift` event with the value before and after. The radio log buffer is also set on sight: the B30 ignores Developer options' "Logger buffer sizes" at boot and starts with 256 KiB buffers, so after every reboot the check runs `logcat -b main,system,radio,crash -G 8M` (logged quietly as `log_buffer_set`, no alert). Anything else raises an alert. This is all a phone gets automatically, including a new one. A failed check is recorded and raises an alert.
-- **Set up phone** (the button on the card of a phone that is not set up yet, after a confirmation, or `POST /api/v1/phones/{serial}/provision`) applies every rule adb can set: radios and data off, Data Saver on, Google Messages as the default SMS app, screen settings, and removing the apps on the `REMOVE` list. Removing an app deletes its data; `cmd package install-existing` brings the app back without it. It then re-reads and verifies; a phone that already complies gets no commands. One setting cannot be set over adb and is only checked; the Phones page says what to tap: **MMS messages** with data off (per SIM). Messages is deliberately not exempted from Data Saver; see the note in `policy.ts`.
-- **Data watch**: per-app mobile bytes on metered (internet) networks, leaving out the phone process (uid 1001, which carries MMS, IMS, and video calls), above `DATA_THRESHOLD_BYTES` per SIM in 24 h turn data off again, log `data_threshold`, and turn the phone card red. That MMS bytes land on uid 1001 is inferred from AOSP.
-- **SIM hotplug**: each online phone streams its radio log, filtered to SIM state lines, and polls `gsm.sim.state` every 10 s. Any change turns mobile data off at once (`svc data disable`, `mobile_data 0`), then the app re-reads `dumpsys isub`; a new SIM gets its own `mobile_data<subId> 0`, a verified check, a `sim.secured` event, and an inventory read that records the placement and number. If turning data off fails, a critical alert stays until a check finds data off. On connect and at set-up, the data keys of the next four subscription ids are also written as 0 ahead of time (Android numbers new SIMs in sequence; a guess, and harmless if unused).
-- **Alerts**: a phone offline for more than 5 minutes, a SIM out of service for more than 30 minutes (cleared after three in-service samples), a battery above 45 °C (cleared below 43 °C), a failing rule or check, a radio that would not turn off, mobile data above the threshold, and a failed data-off after a SIM change or after data went over the threshold (`sim_unsecured`; it stays, even while the phone is offline, until a later check finds data off). `GET /api/v1/status` lists them with each phone's rule results. Health is sampled every `HEALTH_INTERVAL_S` and stored as 5-minute aggregates (`health_5m`), kept 90 days.
+Rules for the phones' settings are optional. Set `POLICY_PROFILE` to a profile file to turn them on; without one, spareline never changes a setting on a phone. Two examples ship in [`profiles/`](profiles/):
 
-On the Phones page, a phone that passes every rule shows **Safety OK**; otherwise its card lists only the rules it fails, each with its current value and, for the settings adb cannot change, what to tap. A check that failed is listed as **Last check failed** with the reason, and a phone none of whose checks has read the rules yet shows **Safety not checked yet**. While there are alerts the cards do not already show (a phone offline or out of service, a hot battery, a SIM not secured, mobile data over the threshold, a radio still on after the automatic fix), a banner above the phones lists them, red when any is critical; otherwise there is none. **Set up phone** appears only while a phone fails a rule that only set-up fixes (the removed apps, the default SMS app, the screen settings, Data Saver, or automatic updates); a phone that passes those rules shows no button. It comes back if one of those settings drifts, for example when an update reinstalls a removed app.
+- [`no-data.json`](profiles/no-data.json): radios and mobile data stay off, Data Saver on, automatic system updates off, and MMS allowed with data off. A good start for lines that only receive texts.
+- [`nuu-b30-no-data.json`](profiles/nuu-b30-no-data.json): the same, tuned for the NUU B30: Google Messages as the default SMS app, a dim screen that sleeps after 15 seconds, a larger radio log buffer (the B30 resets it at every boot), and the preinstalled apps it does not need removed.
 
-Every command the monitor runs on a phone passes a guard that refuses anything that could turn a radio or data on. The two POST routes accept only requests another site cannot make: `Content-Type: application/json` (an empty `{}` body is fine) or `X-Spareline: 1`, and never `Sec-Fetch-Site: cross-site`.
+A profile is a JSON object; every group is optional and does nothing when left out:
 
-`bun scripts/policy-check.ts SERIAL` prints every rule's state for one phone without changing anything.
+| Key | What it checks or sets |
+| --- | --- |
+| `radiosOff` | Mobile data and roaming (per SIM), Wi-Fi and its scanning and wake-up, Bluetooth and its scanning, and location stay off. Turned off again on sight. Also turns data off when a SIM changes, presets the next SIMs' data keys, and runs the data watch. `{ "dataThresholdBytes": 1000000 }` sets the data watch's limit (the default). |
+| `dataSaver` | `true`: Data Saver on. |
+| `smsApp` | The package that must be the default SMS app, such as `com.google.android.apps.messaging`. |
+| `removeApps` | Packages removed for the phone's user by **Set up phone**. Removing an app deletes its data; `cmd package install-existing <package>` brings the app back without it. |
+| `screen` | `autoBrightness` (true or false), `brightness` (0-255), `timeoutSeconds`, and `stayOnWhileCharging` (true or false). |
+| `disableSystemUpdates` | `true`: automatic system updates off. |
+| `radioLogBufferMiB` | The radio log buffer is at least this many MiB; set on sight with `logcat -G`, logged quietly as `log_buffer_set`. |
+| `mmsWithDataOff` | `true`: **MMS messages** stays on with mobile data off, per SIM. adb cannot set it, so the Phones page says what to tap. |
+
+The server exits at startup if the profile is missing or invalid, naming each problem. With a profile:
+
+- **Drift check**, when a phone comes online and every `POLICY_CHECK_INTERVAL_S`: one batched, read-only `adb shell` (about 0.6-0.75 s on a NUU B30 with its profile) reads every rule and, with `radiosOff`, the phone's network stats. Radio and data drift is turned off on sight and logged as a `drift` event with the value before and after. Anything else raises an alert and waits for **Set up phone**. A failed check is recorded and raises an alert.
+- **Set up phone** (the button on the card of a phone that fails a rule only set-up fixes, after a confirmation that lists what it will do, or `POST /api/v1/phones/{serial}/provision`) applies every rule adb can set, then re-reads and verifies; a phone that already complies gets no commands. Without a profile the route answers 409.
+- **Data watch** (`radiosOff`): per-app mobile bytes on metered (internet) networks, leaving out the phone process (uid 1001, which carries MMS, IMS, and video calls), above `dataThresholdBytes` per SIM in 24 h turn data off again, log `data_threshold`, and turn the phone card red. That MMS bytes land on uid 1001 is inferred from AOSP.
+- **SIM hotplug**: each online phone streams its radio log, filtered to SIM state lines, and polls `gsm.sim.state` every 10 s. On a change the app re-reads `dumpsys isub` and the inventory records the placement and number. With `radiosOff`, a change first turns mobile data off at once (`svc data disable`, `mobile_data 0`); a new SIM gets its own `mobile_data<subId> 0`, a verified check, and a `sim.secured` event. If turning data off fails, a critical alert (`sim_unsecured`) stays, even while the phone is offline, until a check finds data off. On connect and at set-up, the data keys of the next four subscription ids are also written as 0 ahead of time (Android numbers new SIMs in sequence; a guess, and harmless if unused).
+
+On the Phones page, a phone that passes every rule shows **Policy OK**; otherwise its card lists only the rules it fails, each with its current value and, for the settings adb cannot change, what to tap. A check that failed is listed as **Last check failed** with the reason, and a phone none of whose checks has read the rules yet shows **Policy not checked yet**. Without a profile the cards show none of this. While there are alerts the cards do not already show, a banner above the phones lists them, red when any is critical; otherwise there is none.
+
+Whatever the profile, every command the app runs on a phone passes a guard that refuses anything that could turn a radio or data on. The two POST routes accept only requests another site cannot make: `Content-Type: application/json` (an empty `{}` body is fine) or `X-Spareline: 1`, and never `Sec-Fetch-Site: cross-site`.
+
+`bun scripts/policy-check.ts SERIAL PROFILE` prints every rule's state for one phone without changing anything.
 
 ## Develop
 
@@ -76,7 +95,7 @@ ADB_SERVER=127.0.0.1:15037 bun run dev    # http://127.0.0.1:8740
 | `HEALTH_INTERVAL_S` | `60` | Seconds between health probes of each phone |
 | `WEB_DIR` | `dist/web` | Built web UI |
 | `POLICY_CHECK_INTERVAL_S` | `300` | Seconds between drift checks of each phone |
-| `DATA_THRESHOLD_BYTES` | `1000000` | Internet mobile data per SIM per 24 h that turns data off again and raises an alert |
+| `POLICY_PROFILE` | (none) | A policy profile file, such as `profiles/no-data.json`; without one the phones' settings are left alone (see Phone health and rules) |
 
 The server exits at startup if any variable is invalid.
 
@@ -114,7 +133,8 @@ After CI passes on `main`, GitHub Actions builds `linux/arm64` natively and push
 | --- | --- |
 | `src/adb/` | adb server client over TCP: device tracking, `shell,v2`, `exec`, stream services, sync push |
 | `src/devices/` | `DeviceManager`, the sole owner of device state; probes and parsers |
-| `src/monitor/` | Phone policy, drift check, Provision, data watch, SIM hotplug, health aggregates, alerts |
+| `src/monitor/` | Health aggregates, alerts, SIM hotplug, and the optional policy: profiles, drift check, Provision, data watch |
+| `profiles/` | Example policy profiles |
 | `src/inventory/` | Phones, SIMs, placements, and numbers (with their notes) in SQLite |
 | `src/sms/` | Text ingest (isms trigger, provider queries, reconcile, MMS parts), attribution to numbers, message queries |
 | `src/db/` | Connection, numbered migrations, online backup |

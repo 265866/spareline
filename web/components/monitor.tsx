@@ -78,7 +78,7 @@ export function MonitorAlerts() {
 	if (monitor.error)
 		return (
 			<div className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-950/60 dark:text-amber-200">
-				Could not load the safety status: {monitor.error}
+				Could not load the phone status: {monitor.error}
 			</div>
 		);
 	if (alerts.length === 0) return null;
@@ -168,20 +168,26 @@ function ActionButton({
 	);
 }
 
-const SETUP_CONFIRM = `Set up this phone?
+function setupConfirm(profile: {
+	name: string;
+	setUp: string[];
+	removesApps: boolean;
+}): string {
+	const removes = profile.removesApps;
+	return `Set up this phone with the ${profile.name} profile?
 
-This turns radios and mobile data off, turns Data Saver on, makes Google Messages the default SMS app, sets the screen to dim and sleep after 15 seconds, and removes the unneeded apps (Chrome, Play Store, YouTube, Maps, and others) for the phone's user.
+${profile.setUp.map((line) => `- ${line}`).join("\n")}${removes ? "\n\nRemoving an app deletes its data. The app can be reinstalled later, but its data cannot be restored." : ""}`;
+}
 
-Removing an app deletes its data. The app can be reinstalled later, but its data cannot be restored.`;
-
-// The monitor's part of a phone card: the data alarm, "Safety OK" or only
+// The monitor's part of a phone card: the data alarm, "Policy OK" or only
 // the rules the phone fails, and Set up phone while it is not set up yet.
 export function PhoneMonitor({ serial }: { serial: string }) {
 	const monitor = useStatus();
 	const entry = monitor.data?.phones.find((phone) => phone.serial === serial);
 	const policy = entry?.policy ?? null;
 	const action = useAction(serial, monitor.reload);
-	if (!entry) return null;
+	const profile = monitor.data?.profile ?? null;
+	if (!entry || !profile) return null;
 	const check = policy?.check;
 	const status = safetyStatus(check);
 	const over = check?.usage.filter((sim) => sim.over) ?? [];
@@ -211,17 +217,17 @@ export function PhoneMonitor({ serial }: { serial: string }) {
 			)}
 			<div className="flex flex-wrap items-center justify-between gap-2 text-sm">
 				{status.kind === "unchecked" ? (
-					<span className="text-zinc-400">Safety not checked yet</span>
+					<span className="text-zinc-400">Policy not checked yet</span>
 				) : status.kind === "ok" ? (
 					<span
 						className="inline-flex items-center gap-1.5 font-medium text-emerald-700 dark:text-emerald-400"
-						title={`All ${status.rules} safety rules pass · checked ${ago(status.at)}`}
+						title={`All ${status.rules} rules pass · checked ${ago(status.at)}`}
 					>
-						<ShieldCheck size={15} /> Safety OK
+						<ShieldCheck size={15} /> Policy OK
 					</span>
 				) : (
 					<span className="font-medium">
-						Safety: {status.problems.length} problem
+						Policy: {status.problems.length} problem
 						{status.problems.length === 1 ? "" : "s"}
 					</span>
 				)}
@@ -231,19 +237,20 @@ export function PhoneMonitor({ serial }: { serial: string }) {
 						busy={action.running === "check" || policy?.busy === "check"}
 						disabled={!online || action.running !== null}
 						icon={<RefreshCw size={12} />}
-						title={`Check every safety rule now${check ? ` (last checked ${ago(check.at)})` : ""}`}
+						title={`Check every rule now${check ? ` (last checked ${ago(check.at)})` : ""}`}
 					>
 						Check now
 					</ActionButton>
 					{showSetup && (
 						<ActionButton
 							onClick={() => {
-								if (window.confirm(SETUP_CONFIRM)) void action.run("provision");
+								if (window.confirm(setupConfirm(profile)))
+									void action.run("provision");
 							}}
 							busy={settingUp}
 							disabled={!online || action.running !== null}
 							icon={<Wand2 size={12} />}
-							title="Radios and data off, Data Saver on, Google Messages as the SMS app, screen settings, and the unneeded apps removed; then verify"
+							title={`Apply the ${profile.name} profile, then verify`}
 						>
 							Set up phone
 						</ActionButton>

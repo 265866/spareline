@@ -1,19 +1,23 @@
 import { beforeAll, expect, test } from "bun:test";
+import {
+	B30_POLICY,
+	B30_PROFILE,
+	LOG_BUFFER_COMMAND,
+} from "../../test/b30-policy";
 import { fixture } from "../../test/replay-shell";
 import {
 	evaluate,
-	LOG_BUFFER_COMMAND,
-	parseSnapshot,
 	plan,
 	presetDataOffCommands,
-	READ_SCRIPT,
-	REMOVE,
-	RULES,
 	radioHazard,
 	type Snapshot,
 } from "./policy";
 
-// policy-read.txt is READ_SCRIPT's output recorded from a B30 that was
+const RULES = B30_POLICY.rules;
+const READ_SCRIPT = B30_POLICY.readScript;
+const parseSnapshot = B30_POLICY.parse;
+
+// policy-read.txt is the B30 profile's read, recorded from a B30 that was
 // already set up. Variants below change one recorded line, as a
 // person tapping in Settings would; the phone itself must not be put in
 // those states on demand (most of them turn a radio on).
@@ -26,7 +30,7 @@ beforeAll(async () => {
 const idle = { screenSession: false };
 const resultsOf = (snapshot: Snapshot, context = idle) =>
 	Object.fromEntries(
-		evaluate(snapshot, context).map((result) => [
+		evaluate(snapshot, context, RULES).map((result) => [
 			result.id,
 			[result.ok, result.observed],
 		]),
@@ -105,13 +109,13 @@ test("the provisioned B30 passes every rule but the radio log buffer size", () =
 	});
 	// The buffer is the only thing to fix, and the drift checker fixes it.
 	const fix = [{ rule: "log_buffer", commands: [LOG_BUFFER_COMMAND] }];
-	expect(plan(snapshot, idle, () => true)).toEqual(fix);
-	expect(plan(snapshot, idle, (rule) => rule.autoFix)).toEqual(fix);
+	expect(plan(snapshot, idle, () => true, RULES)).toEqual(fix);
+	expect(plan(snapshot, idle, (rule) => rule.autoFix, RULES)).toEqual(fix);
 	expect(LOG_BUFFER_COMMAND).toBe("logcat -b main,system,radio,crash -G 8M");
 	// What the next read shows once logd took the size.
 	const resized = variant(["ring buffer is 256 KiB", "ring buffer is 8 MiB"]);
 	expect(resultsOf(resized).log_buffer).toEqual([true, "8 MiB"]);
-	expect(plan(resized, idle, () => true)).toEqual([]);
+	expect(plan(resized, idle, () => true, RULES)).toEqual([]);
 });
 
 test("radio drift plans exactly the commands that turn it off", () => {
@@ -124,7 +128,7 @@ test("radio drift plans exactly the commands that turn it off", () => {
 		["data_roaming=0", "data_roaming=1"],
 		["ring buffer is 256 KiB", "ring buffer is 8 MiB"],
 	);
-	expect(plan(drifted, idle, (rule) => rule.autoFix)).toEqual([
+	expect(plan(drifted, idle, (rule) => rule.autoFix, RULES)).toEqual([
 		{
 			rule: "mobile_data",
 			commands: [
@@ -158,13 +162,15 @@ test("radio drift plans exactly the commands that turn it off", () => {
 
 test("a new SIM whose per-SIM data key is unset counts as data on", () => {
 	const snapshot = withSecondSim();
-	const mobile = evaluate(snapshot, idle).find((r) => r.id === "mobile_data");
+	const mobile = evaluate(snapshot, idle, RULES).find(
+		(r) => r.id === "mobile_data",
+	);
 	expect(mobile).toMatchObject({
 		ok: false,
 		observed: "mobile_data=0, mobile_data1=0, mobile_data2=unset",
 	});
 	expect(
-		plan(snapshot, idle, (rule) => rule.autoFix).find(
+		plan(snapshot, idle, (rule) => rule.autoFix, RULES).find(
 			(step) => step.rule === "mobile_data",
 		)?.commands,
 	).toEqual([
@@ -193,17 +199,17 @@ test("check-only rules carry the on-phone instruction and no commands", () => {
 		"enabledMobileDataPolicies=2",
 		"enabledMobileDataPolicies=",
 	]);
-	const results = evaluate(snapshot, idle);
+	const results = evaluate(snapshot, idle, RULES);
 	const mms = results.find((result) => result.id === "mms_with_data_off");
 	expect(mms).toMatchObject({ ok: false, fixable: false });
 	expect(mms?.instruction).toContain("MMS messages");
 	expect(
-		plan(snapshot, idle, () => true).map((step) => step.rule),
+		plan(snapshot, idle, () => true, RULES).map((step) => step.rule),
 	).not.toContain("mms_with_data_off");
 });
 
 test("the log buffer is set automatically, with no action asked of the owner", () => {
-	const buffer = evaluate(parseSnapshot(recorded), idle).find(
+	const buffer = evaluate(parseSnapshot(recorded), idle, RULES).find(
 		(result) => result.id === "log_buffer",
 	);
 	expect(buffer).toMatchObject({
@@ -219,14 +225,14 @@ test("the log buffer is set automatically, with no action asked of the owner", (
 	);
 });
 
-test("the radio buffer passes from 4 MiB, by the size logcat reports in effect", () => {
+test("the radio buffer passes from the profile's 8 MiB, by the size logcat reports in effect", () => {
 	const sized = (size: string) =>
 		resultsOf(variant(["ring buffer is 256 KiB", `ring buffer is ${size}`]))
 			.log_buffer;
+	expect(sized("16 MiB")).toEqual([true, "16 MiB"]);
 	expect(sized("8 MiB")).toEqual([true, "8 MiB"]);
-	expect(sized("4 MiB")).toEqual([true, "4 MiB"]);
-	expect(sized("4095 KiB")).toEqual([false, "4095 KiB"]);
-	expect(sized("1 MiB")).toEqual([false, "1 MiB"]);
+	expect(sized("8191 KiB")).toEqual([false, "8191 KiB"]);
+	expect(sized("4 MiB")).toEqual([false, "4 MiB"]);
 	expect(
 		resultsOf(
 			variant([
@@ -248,10 +254,10 @@ test("scrcpy's stay-awake setting is accepted only during a screen session", () 
 		"3 (screen session)",
 	]);
 	expect(
-		plan(awake, { screenSession: true }, () => true).map((s) => s.rule),
+		plan(awake, { screenSession: true }, () => true, RULES).map((s) => s.rule),
 	).not.toContain("stay_on_off");
 	expect(
-		plan(awake, idle, () => true).find((s) => s.rule === "stay_on_off")
+		plan(awake, idle, () => true, RULES).find((s) => s.rule === "stay_on_off")
 			?.commands,
 	).toEqual(["settings put global stay_on_while_plugged_in 0"]);
 });
@@ -266,14 +272,15 @@ test("debloat uninstalls only listed apps that are still installed", () => {
 		"installed: com.android.chrome, com.google.android.dialer",
 	]);
 	const commands =
-		plan(snapshot, idle, () => true).find((step) => step.rule === "debloat")
-			?.commands ?? [];
+		plan(snapshot, idle, () => true, RULES).find(
+			(step) => step.rule === "debloat",
+		)?.commands ?? [];
 	expect(commands).toEqual([
 		"pm uninstall --user 0 com.android.chrome",
 		"pm uninstall --user 0 com.google.android.dialer",
 	]);
 	for (const command of commands)
-		expect(REMOVE as readonly string[]).toContain(
+		expect(B30_PROFILE.removeApps).toContain(
 			command.replace("pm uninstall --user 0 ", ""),
 		);
 });
@@ -404,7 +411,7 @@ test("safety rules are exactly the radio and data rules", () => {
 		"bluetooth_off",
 		"location_off",
 	]);
-	// The same set the critical drift alert used before the flag.
+	// And exactly the rules fixed on sight that alert as critical.
 	expect(
 		RULES.filter((rule) => rule.autoFix && rule.severity === "critical").map(
 			(rule) => rule.id,
@@ -417,6 +424,7 @@ test("an unreadable buffer size says so instead of blaming the phone", () => {
 	const unreadable = evaluate(
 		variant([/radio: ring buffer is .*/, "logcat: Unable to open log device"]),
 		idle,
+		RULES,
 	).find((result) => result.id === "log_buffer");
 	expect(unreadable).toMatchObject({
 		ok: false,

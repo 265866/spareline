@@ -11,7 +11,7 @@ test("defaults bind loopback on 8740 and use the local adb server", () => {
 		HEALTH_INTERVAL_S: 60,
 		WEB_DIR: "dist/web",
 		POLICY_CHECK_INTERVAL_S: 300,
-		DATA_THRESHOLD_BYTES: 1_000_000,
+		POLICY_PROFILE: null,
 	});
 });
 
@@ -27,7 +27,8 @@ test("values are parsed and invalid ones are named", () => {
 	expect(() => parseEnv({ HEALTH_INTERVAL_S: "1" })).toThrow(
 		"HEALTH_INTERVAL_S",
 	);
-	expect(() => parseEnv({ DATA_THRESHOLD_BYTES: "-1" })).toThrow(
-		"DATA_THRESHOLD_BYTES",
-	);
+	expect(parseEnv({ POLICY_PROFILE: " " }).POLICY_PROFILE).toBeNull();
+	expect(
+		parseEnv({ POLICY_PROFILE: "profiles/no-data.json" }).POLICY_PROFILE,
+	).toBe("profiles/no-data.json");
 });

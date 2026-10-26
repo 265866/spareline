@@ -212,6 +212,17 @@ export function createApp(options: AppOptions) {
 				})),
 				alerts: monitor?.alerts() ?? [],
 				dataThresholdBytes: monitor?.dataThresholdBytes ?? null,
+				profile: monitor?.policy
+					? {
+							name: monitor.policy.name,
+							setUp: monitor.policy.rules
+								.filter((rule) => rule.enforce)
+								.map((rule) => rule.describe),
+							removesApps: monitor.policy.rules.some(
+								(rule) => rule.id === "debloat",
+							),
+						}
+					: null,
 			}),
 			{
 				response: { 200: Status },

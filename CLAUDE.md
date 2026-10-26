@@ -4,7 +4,7 @@ Android phones on USB to a small Linux host (developed on a Raspberry Pi 5: 2 GB
 
 ## Rules
 
-- The phones must never use mobile data or Wi-Fi. Never run a command that enables a radio or data (`svc data enable`, `svc wifi enable`, settings that turn them on). Probes are read-only.
+- The app never turns a radio or data on, whatever the policy profile: every command it runs on a phone passes `radioHazard` in `src/monitor/policy.ts`. Never run a command that enables a radio or data (`svc data enable`, `svc wifi enable`, settings that turn them on) yourself either. Probes are read-only.
 - `src/devices/manager.ts` is the only app code that opens per-phone adb sessions. Everything else uses its `Devices` interface. The exceptions are standalone tools that run outside the server: `src/smoke.ts` (the deploy gate) and `scripts/*` (fixture recording).
 - Binder codes for `service call` live only in `src/devices/identifiers.ts`, keyed by SDK and verified by build fingerprint.
 - No app auth: a private network is the boundary. Bind `127.0.0.1`; never expose the port publicly (no Tailscale Funnel).
