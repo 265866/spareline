@@ -11,6 +11,7 @@ import {
 	Usb,
 } from "lucide-react";
 import { type PhoneView, useResource } from "../api";
+import { MonitorAlerts, PhoneMonitor } from "../components/monitor";
 import { Badge, Empty, SignalBars, StatusBadge } from "../components/ui";
 import { ago, formatNumber, SERVICE_LABEL } from "../format";
 import { linkProps } from "../router";
@@ -30,6 +31,7 @@ export function PhonesPage() {
 			{phones.error && (
 				<Badge tone="bad">Could not load phones: {phones.error}</Badge>
 			)}
+			<MonitorAlerts />
 			{list?.length === 0 && (
 				<Empty icon={<Smartphone size={32} />} title="No phones yet">
 					Plug a phone into the host with USB debugging on. It appears here
@@ -123,6 +125,8 @@ function PhoneCard({ phone }: { phone: PhoneView }) {
 					</span>
 				</div>
 			)}
+			<PhoneMonitor serial={phone.serial} />
+
 			{(phone.battery || phone.status === "online") && (
 				<div className="text-sm">
 					<BatteryLine phone={phone} />

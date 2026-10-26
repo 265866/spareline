@@ -39,4 +39,11 @@ export const EVENT_LABEL: Record<string, string> = {
 	"number.changed": "Number changed",
 	"adb.unreachable": "adb server unreachable",
 	"adb.reachable": "adb server back",
+	drift: "Setting reverted",
+	log_buffer_set: "Radio log buffer enlarged",
+	data_threshold: "Mobile data used: turned off again",
+	provision: "Provisioned",
+	"sim.secured": "New SIM: mobile data turned off",
+	"alert.raised": "Alert",
+	"alert.cleared": "Alert cleared",
 };
