@@ -93,6 +93,45 @@ test("a new password ends every other session; removing a user ends all", async 
 	expect(auth.session(again)).toBeNull();
 });
 
+test("a session reports when using it extends it, at most hourly", async () => {
+	const { user } = await auth.addUser("alice");
+	const token = auth.createSession(user.id);
+	let renewals = 0;
+	const use = () => auth.session(token, () => renewals++);
+	use();
+	expect(renewals).toBe(0);
+	clock.now = new Date(clock.now.getTime() + 59 * 60_000);
+	use();
+	expect(renewals).toBe(0);
+	clock.now = new Date(clock.now.getTime() + 2 * 60_000);
+	use();
+	expect(renewals).toBe(1);
+});
+
+test("ending, expiring, or changing a session notifies, and validity follows", async () => {
+	const { user } = await auth.addUser("alice");
+	let changes = 0;
+	const off = auth.onChange(() => changes++);
+	const first = auth.session(auth.createSession(user.id));
+	const second = auth.session(auth.createSession(user.id));
+	if (!first || !second) throw new Error("no sessions");
+	expect([auth.valid(first), auth.valid(second)]).toEqual([true, true]);
+	auth.endSession(first.sessionId);
+	expect(changes).toBe(1);
+	expect(auth.valid(first)).toBe(false);
+	await auth.setPassword(user.id, "a long new password");
+	expect(changes).toBe(2);
+	expect(auth.valid(second)).toBe(false);
+	const third = auth.session(auth.createSession(user.id));
+	if (!third) throw new Error("no session");
+	clock.now = new Date(clock.now.getTime() + (SESSION_DAYS + 1) * 86_400_000);
+	expect(auth.valid(third)).toBe(false);
+	auth.pruneSessions();
+	auth.removeUser("alice");
+	expect(changes).toBe(4);
+	off();
+});
+
 test("expired sessions are pruned", async () => {
 	const { user } = await auth.addUser("alice");
 	auth.createSession(user.id);
@@ -117,7 +156,7 @@ test("generated passwords use the whole alphabet evenly", () => {
 test("the limiter refuses a key after 10 failures in 15 minutes, until the oldest ages out", () => {
 	let now = 0;
 	const limiter = new LoginLimiter(10, 15 * 60_000, () => now);
-	const keys = ["name:alice", "ip:192.0.2.1"];
+	const keys = ["name:alice"];
 	for (let i = 0; i < 9; i++) {
 		limiter.fail(keys);
 		now += 1_000;
@@ -126,11 +165,12 @@ test("the limiter refuses a key after 10 failures in 15 minutes, until the oldes
 	limiter.fail(keys);
 	// The oldest failure was at 0 and expires at 900 s.
 	expect(limiter.retryAfter(keys)).toBe(900 - 9);
-	expect(limiter.retryAfter(["name:bob", "ip:192.0.2.1"])).toBe(891);
-	// A success clears the name but not the address.
-	limiter.succeed(keys);
-	expect(limiter.retryAfter(["name:alice"])).toBeNull();
-	expect(limiter.retryAfter(["ip:192.0.2.1"])).toBe(891);
+	// Other names are not affected.
+	expect(limiter.retryAfter(["name:bob"])).toBeNull();
 	now = 15 * 60_000 + 1;
+	expect(limiter.retryAfter(keys)).toBeNull();
+	// A success clears the name.
+	for (let i = 0; i < 10; i++) limiter.fail(keys);
+	limiter.succeed(keys);
 	expect(limiter.retryAfter(keys)).toBeNull();
 });

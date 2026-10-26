@@ -84,7 +84,7 @@ bun src/cli.ts users reset-password NAME  # prints a new one and signs NAME out 
 bun src/cli.ts users remove NAME
 ```
 
-In the container, prefix them with `podman exec spareline`. Anyone signed in can change their own password on the **Settings** page (at least 12 characters); that signs out their other browsers. Passwords are stored as argon2id hashes and sessions as SHA-256 hashes of their tokens. After 10 failed sign-ins for one name or from one address in 15 minutes, further attempts are refused for a while. Inventory edits and screen sessions record who made them.
+In the container, prefix them with `podman exec spareline`. Anyone signed in can change their own password on the **Settings** page (at least 12 characters); that signs out their other browsers. Passwords are stored as argon2id hashes and sessions as SHA-256 hashes of their tokens. After 10 failed sign-ins for one name in 15 minutes, further attempts for that name are refused for a while. When a session ends (signing out, a password change, `reset-password`, or `remove`), its open event streams and screens close too, at once or, for changes made with the CLI, within 5 seconds. Inventory edits and screen sessions record who made them.
 
 Requests that change something must be JSON (or carry `X-Spareline: 1`), so a page on another site cannot make them in a signed-in browser; the session cookie is `SameSite=Strict`, and `Secure` when the request came over HTTPS (directly or with `X-Forwarded-Proto: https` from the proxy).
 

@@ -1,7 +1,8 @@
-// Failed sign-ins per key (a user name, a client address), in memory. A key
-// with `max` failures inside `windowMs` is refused until its oldest one is
-// that old. A restart forgets them, which costs an attacker a restart they
-// cannot cause.
+// Failed password checks per key (a user name), in memory. A key with `max`
+// failures inside `windowMs` is refused until its oldest one is that old. A
+// restart forgets them, which costs an attacker a restart they cannot cause.
+// There is no per-address key: behind the reverse proxy every client has the
+// proxy's address, so one client could lock everyone out.
 export class LoginLimiter {
 	private readonly failures = new Map<string, number[]>();
 
@@ -25,16 +26,18 @@ export class LoginLimiter {
 		return wait > 0 ? Math.ceil(wait / 1000) : null;
 	}
 
+	// Callers record an attempt as a failure before checking the password and
+	// clear it with succeed(), so a burst of concurrent attempts cannot all
+	// pass retryAfter() first.
 	fail(keys: string[]): void {
+		if (this.failures.size > 10_000)
+			for (const key of [...this.failures.keys()]) this.recent(key);
 		for (const key of keys)
 			this.failures.set(key, [...this.recent(key), this.now()]);
 	}
 
-	// A correct password clears the name's failures; the address keeps its
-	// own, so one good account does not unlock guessing at others.
 	succeed(keys: string[]): void {
-		for (const key of keys)
-			if (key.startsWith("name:")) this.failures.delete(key);
+		for (const key of keys) this.failures.delete(key);
 	}
 
 	private recent(key: string): number[] {

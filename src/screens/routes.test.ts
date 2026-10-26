@@ -14,7 +14,7 @@ import { silent } from "../log";
 import { MessageStore } from "../sms/store";
 import { ScreenManager } from "./manager";
 import { MAX_VIEWER_MESSAGE_BYTES } from "./protocol";
-import { sameOrigin } from "./routes";
+import { CLOSE_SIGNED_OUT, sameOrigin } from "./routes";
 
 // The screen routes inside the real app, over a real WebSocket. The phone
 // side is the stand-in from test/fake-scrcpy.ts (see there for why).
@@ -28,6 +28,7 @@ let base: string;
 let webDir: string;
 // The signed-in viewer's session cookie.
 let cookie: string;
+let session: ReturnType<typeof testSession>;
 
 beforeEach(() => {
 	db = openDb(":memory:");
@@ -47,7 +48,7 @@ beforeEach(() => {
 	// A built UI, so the SPA's catch-all route is present as in production.
 	webDir = mkdtempSync(join(tmpdir(), "spareline-web-"));
 	writeFileSync(join(webDir, "index.html"), "<!doctype html>");
-	const session = testSession(db, "someone@example.com");
+	session = testSession(db, "someone@example.com");
 	cookie = session.cookie;
 	server = createApp({
 		auth: session.auth,
@@ -240,4 +241,13 @@ test("a screen needs a session: without one the upgrade is refused with 401", as
 	);
 	expect(response.status).toBe(401);
 	expect(phone.servers).toEqual([]);
+});
+
+test("a viewer whose session ends is closed with 4003", async () => {
+	const { received, closed } = connect(`/api/v1/phones/${SERIAL}/screen`);
+	await until(() => received.text.some((m) => m.t === "hello"));
+	session.auth.removeUser(session.name);
+	const event = await closed;
+	expect(event.code).toBe(CLOSE_SIGNED_OUT);
+	expect(event.reason).toBe("signed out");
 });

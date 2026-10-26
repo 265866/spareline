@@ -22,6 +22,10 @@ const PUBLIC_API = new Set([
 ]);
 
 const principals = new WeakMap<Request, Principal>();
+const auths = new WeakMap<Request, Auth>();
+// How often an open stream or socket re-checks that its session is still
+// valid, for changes another process (the CLI) made or for expiry.
+const RECHECK_MS = 5_000;
 
 // Who the request acts for; set by the guard before any route runs.
 export function principalOf(request: Request): Principal | null {
@@ -31,6 +35,34 @@ export function principalOf(request: Request): Principal | null {
 // The name edits and screen sessions are recorded under.
 export function loginOf(request: Request): string | null {
 	return principalOf(request)?.user.name ?? null;
+}
+
+// Aborts when the request's session ends (signed out, password changed,
+// user removed, or expired) or, with `followRequest`, when the request does.
+// A stream or socket that outlives its request uses it to stop serving
+// someone who no longer may.
+export function revocation(
+	request: Request,
+	followRequest = true,
+): { signal: AbortSignal; release: () => void } {
+	const controller = new AbortController();
+	const signal = followRequest
+		? AbortSignal.any([request.signal, controller.signal])
+		: controller.signal;
+	const principal = principalOf(request);
+	const auth = auths.get(request);
+	if (!principal || !auth) return { signal, release: () => {} };
+	const check = () => {
+		if (!auth.valid(principal)) controller.abort();
+	};
+	const off = auth.onChange(check);
+	const timer = setInterval(check, RECHECK_MS);
+	const release = () => {
+		off();
+		clearInterval(timer);
+	};
+	signal.addEventListener("abort", release, { once: true });
+	return { signal, release };
 }
 
 function cookie(request: Request, name: string): string | null {
@@ -70,13 +102,26 @@ export function guard(auth: Auth) {
 		set,
 	}: {
 		request: Request;
-		set: { status?: number | string };
+		set: { status?: number | string; headers: Record<string, unknown> };
 	}) => {
 		const path = new URL(request.url).pathname;
 		if (!path.startsWith("/api/")) return;
 		const token = cookie(request, SESSION_COOKIE);
-		const principal = token ? auth.session(token) : null;
-		if (principal) principals.set(request, principal);
+		// A used session is extended on the server; the cookie gets the same
+		// new lifetime, so an active browser is never signed out.
+		const principal = token
+			? auth.session(token, () => {
+					set.headers["set-cookie"] = sessionCookie(
+						request,
+						token,
+						SESSION_DAYS * 86_400,
+					);
+				})
+			: null;
+		if (principal) {
+			principals.set(request, principal);
+			auths.set(request, auth);
+		}
 		if (principal || PUBLIC_API.has(path)) return;
 		set.status = 401;
 		return { error: "sign in first" };
@@ -111,21 +156,17 @@ export function authRoutes(auth: Auth, limiter = new LoginLimiter()) {
 	return new Elysia({ prefix: "/api/v1/auth" })
 		.post(
 			"/login",
-			async ({ request, body, set, server }) => {
-				const address = server?.requestIP(request)?.address ?? "local";
-				const keys = [
-					`name:${body.name.trim().toLowerCase()}`,
-					`ip:${address}`,
-				];
+			async ({ request, body, set }) => {
+				const keys = [`name:${body.name.trim().toLowerCase()}`];
 				const wait = limiter.retryAfter(keys);
 				if (wait !== null) {
 					set.status = 429;
 					set.headers["retry-after"] = String(wait);
 					return { error: `too many failed sign-ins; try again in ${wait} s` };
 				}
+				limiter.fail(keys);
 				const user = await auth.verify(body.name, body.password);
 				if (!user) {
-					limiter.fail(keys);
 					set.status = 401;
 					return { error: "wrong name or password" };
 				}
@@ -144,7 +185,8 @@ export function authRoutes(auth: Auth, limiter = new LoginLimiter()) {
 				detail: {
 					summary: "Sign in",
 					description:
-						"Sets an HttpOnly session cookie that lasts 30 days from its last use. After 10 failed attempts for one name or from one address in 15 minutes, further attempts get 429 until the oldest failure is 15 minutes old.",
+						"Sets an HttpOnly session cookie that lasts 30 days from its last use. After 10 failed attempts for one name in 15 minutes, further attempts get 429 until the oldest failure is 15 minutes old.",
+					security: [],
 					tags: ["auth"],
 				},
 			},
@@ -169,7 +211,7 @@ export function authRoutes(auth: Auth, limiter = new LoginLimiter()) {
 					200: Me,
 					401: ApiError.extend({ noUsers: z.boolean() }),
 				},
-				detail: { summary: "Who is signed in", tags: ["auth"] },
+				detail: { summary: "Who is signed in", security: [], tags: ["auth"] },
 			},
 		)
 		.post(
@@ -192,10 +234,19 @@ export function authRoutes(auth: Auth, limiter = new LoginLimiter()) {
 				const principal = principalOf(request);
 				if (!principal)
 					throw new Error("the guard let an anonymous request in");
+				const keys = [`name:${principal.user.name.toLowerCase()}`];
+				const wait = limiter.retryAfter(keys);
+				if (wait !== null) {
+					set.status = 429;
+					set.headers["retry-after"] = String(wait);
+					return { error: `too many failed attempts; try again in ${wait} s` };
+				}
+				limiter.fail(keys);
 				if (!(await auth.verify(principal.user.name, body.current))) {
 					set.status = 403;
 					return { error: "the current password is wrong" };
 				}
+				limiter.succeed(keys);
 				try {
 					await auth.setPassword(
 						principal.user.id,
@@ -220,6 +271,7 @@ export function authRoutes(auth: Auth, limiter = new LoginLimiter()) {
 					400: ApiError,
 					403: ApiError,
 					415: ApiError,
+					429: ApiError,
 				},
 				detail: {
 					summary: "Change your password",

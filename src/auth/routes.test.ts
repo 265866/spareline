@@ -15,7 +15,6 @@ import { Monitor } from "../monitor/monitor";
 import { ScreenManager } from "../screens/manager";
 import { MessageStore } from "../sms/store";
 import { Auth, SESSION_COOKIE } from "./auth";
-import { LoginLimiter } from "./limiter";
 
 // The real app with every route mounted (screens and the monitor included),
 // over an in-memory database. No phone is attached: these tests are about who
@@ -23,12 +22,14 @@ import { LoginLimiter } from "./limiter";
 
 let db: Database;
 let auth: Auth;
+const clock = { now: new Date() };
 let app: App;
 let password: string;
 
 beforeEach(async () => {
 	db = openDb(":memory:");
-	auth = new Auth(db);
+	clock.now = new Date();
+	auth = new Auth(db, () => clock.now);
 	({ password } = await auth.addUser("alice"));
 	const adb = await FakeAdb.b30();
 	const devices = new DeviceManager({
@@ -125,6 +126,14 @@ test("every API route but sign-in, who-am-I, and the docs refuses a request with
 	}
 	// Phones, SIMs, numbers, texts, events, screens, status, and set-up.
 	expect(checked).toBeGreaterThan(20);
+	// The guard only covers /api/, so any other route must be one of these
+	// three, all of them public by design.
+	expect(
+		app.routes
+			.filter((route) => !route.path.startsWith("/api/"))
+			.map((route) => `${route.method} ${route.path}`)
+			.sort(),
+	).toEqual(["GET /*", "GET /assets/*", "GET /healthz"]);
 	// The public ones answer.
 	expect((await call("GET", "/healthz")).status).toBe(200);
 	expect((await call("GET", "/api/docs/json")).status).toBe(200);
@@ -242,10 +251,89 @@ test("changing the password needs the current one and keeps only this session", 
 	);
 });
 
-test("the limiter is per name and per address", async () => {
-	const limiter = new LoginLimiter(2, 60_000);
-	limiter.fail(["name:a", "ip:1"]);
-	limiter.fail(["name:b", "ip:1"]);
-	expect(limiter.retryAfter(["name:c", "ip:1"])).not.toBeNull();
-	expect(limiter.retryAfter(["name:c", "ip:2"])).toBeNull();
+test("concurrent wrong passwords cannot get past the limit, and one name does not lock out another", async () => {
+	const results = await Promise.all(
+		Array.from({ length: 30 }, () => signIn("alice", "wrong")),
+	);
+	const statuses = results.map((result) => result.response.status);
+	expect(statuses.filter((status) => status === 401)).toHaveLength(10);
+	expect(statuses.filter((status) => status === 429)).toHaveLength(20);
+	const { password: bobs } = await auth.addUser("bob");
+	expect((await signIn("bob", bobs)).response.status).toBe(200);
 });
+
+test("the current-password check is rate limited too", async () => {
+	const { session } = await signIn();
+	const change = () =>
+		call("POST", "/api/v1/auth/password", {
+			body: { current: "wrong", next: "a long new password" },
+			headers: { cookie: session },
+		});
+	for (let i = 0; i < 10; i++) expect((await change()).status).toBe(403);
+	expect((await change()).status).toBe(429);
+});
+
+test("a session used after an hour gets its cookie renewed for 30 more days", async () => {
+	const { session } = await signIn();
+	const first = await call("GET", "/api/v1/phones", {
+		headers: { cookie: session },
+	});
+	expect(first.headers.get("set-cookie")).toBeNull();
+	clock.now = new Date(clock.now.getTime() + 2 * 3_600_000);
+	const later = await call("GET", "/api/v1/phones", {
+		headers: { cookie: session },
+	});
+	expect(later.status).toBe(200);
+	expect(later.headers.get("set-cookie")).toBe(
+		`${session}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${30 * 86_400}`,
+	);
+});
+
+test("an open event stream ends when its session ends", async () => {
+	const { session } = await signIn();
+	const server = app.listen({ hostname: "127.0.0.1", port: 0 });
+	try {
+		const base = `http://127.0.0.1:${server.server?.port}`;
+		const stream = await fetch(`${base}/api/v1/events?types=device,message`, {
+			headers: { cookie: session },
+		});
+		expect(stream.status).toBe(200);
+		const reader = stream.body?.getReader();
+		const ended = (async () => {
+			for (;;) if ((await reader?.read())?.done ?? true) return true;
+		})();
+		const logout = await fetch(`${base}/api/v1/auth/logout`, {
+			method: "POST",
+			headers: { cookie: session, "content-type": "application/json" },
+			body: "{}",
+		});
+		expect(logout.status).toBe(200);
+		expect(
+			await Promise.race([ended, Bun.sleep(2_000).then(() => false)]),
+		).toBe(true);
+	} finally {
+		await server.stop(true);
+	}
+});
+
+test("a session removed by another process ends open streams within seconds", async () => {
+	const { session } = await signIn();
+	const server = app.listen({ hostname: "127.0.0.1", port: 0 });
+	try {
+		const base = `http://127.0.0.1:${server.server?.port}`;
+		const stream = await fetch(`${base}/api/v1/events`, {
+			headers: { cookie: session },
+		});
+		const reader = stream.body?.getReader();
+		const ended = (async () => {
+			for (;;) if ((await reader?.read())?.done ?? true) return true;
+		})();
+		// What the CLI does from its own process: no notification here.
+		db.run("DELETE FROM sessions");
+		expect(
+			await Promise.race([ended, Bun.sleep(7_000).then(() => false)]),
+		).toBe(true);
+	} finally {
+		await server.stop(true);
+	}
+}, 10_000);

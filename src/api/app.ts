@@ -4,7 +4,7 @@ import { openapi } from "@elysiajs/openapi";
 import { Elysia } from "elysia";
 import { z } from "zod";
 import type { Auth } from "../auth/auth";
-import { authRoutes, guard, loginOf } from "../auth/routes";
+import { authRoutes, guard, loginOf, revocation } from "../auth/routes";
 import type { Bus } from "../bus";
 import { toE164 } from "../devices/identifiers";
 import type { Devices } from "../devices/manager";
@@ -274,7 +274,8 @@ export function createApp(options: AppOptions) {
 					kinds,
 					parseCursor(headers["last-event-id"] ?? query.after, kinds),
 					query.latest ?? 0,
-					request.signal,
+					// Ends when the client goes away or its session ends.
+					revocation(request).signal,
 				);
 			},
 			{

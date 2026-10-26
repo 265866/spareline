@@ -52,11 +52,35 @@ export class Auth {
 	// Verified against when a name is unknown, so a wrong name takes as long
 	// as a wrong password.
 	private dummyHash: Promise<string> | null = null;
+	private readonly listeners = new Set<() => void>();
 
 	constructor(
 		private readonly db: Database,
 		private readonly now: () => Date = () => new Date(),
 	) {}
+
+	// Calls `listener` after anything in this process that can end a session.
+	// Open streams and sockets re-check their principal then (and on a timer,
+	// for changes another process such as the CLI made).
+	onChange(listener: () => void): () => void {
+		this.listeners.add(listener);
+		return () => {
+			this.listeners.delete(listener);
+		};
+	}
+
+	private changed(): void {
+		for (const listener of [...this.listeners]) listener();
+	}
+
+	// Whether the principal's session still exists and has not expired.
+	valid(principal: Principal): boolean {
+		return (
+			this.db
+				.query("SELECT 1 FROM sessions WHERE id = ? AND expires_at > ?")
+				.get(principal.sessionId, this.now().toISOString()) !== null
+		);
+	}
 
 	listUsers(): User[] {
 		return this.db
@@ -104,6 +128,7 @@ export class Auth {
 		const user = this.findUser(name);
 		if (!user) throw new AuthError(`no user ${name}`);
 		this.db.run("DELETE FROM users WHERE id = ?", [user.id]);
+		this.changed();
 	}
 
 	// Sets a new password and signs the user out everywhere except `keep`.
@@ -127,6 +152,7 @@ export class Auth {
 				keep,
 			]);
 		})();
+		this.changed();
 	}
 
 	// Replaces a forgotten password with a generated one, returned once, and
@@ -173,8 +199,9 @@ export class Auth {
 		return token;
 	}
 
-	// The session's user while it is unexpired; using it extends it.
-	session(token: string): Principal | null {
+	// The session's user while it is unexpired. Using it extends it, at most
+	// hourly; `renewed` is called then, so the cookie can be renewed too.
+	session(token: string, renewed?: () => void): Principal | null {
 		const row = this.db
 			.query<
 				UserRow & {
@@ -194,16 +221,19 @@ export class Auth {
 			this.db.run("DELETE FROM sessions WHERE id = ?", [row.session_id]);
 			return null;
 		}
-		if (now.getTime() - Date.parse(row.last_seen_at) >= TOUCH_MS)
+		if (now.getTime() - Date.parse(row.last_seen_at) >= TOUCH_MS) {
 			this.db.run(
 				"UPDATE sessions SET last_seen_at = ?, expires_at = ? WHERE id = ?",
 				[now.toISOString(), expiry(now).toISOString(), row.session_id],
 			);
+			renewed?.();
+		}
 		return { kind: "session", user: toUser(row), sessionId: row.session_id };
 	}
 
 	endSession(sessionId: number): void {
 		this.db.run("DELETE FROM sessions WHERE id = ?", [sessionId]);
+		this.changed();
 	}
 
 	// Drops expired sessions; the server runs it now and then.
@@ -211,6 +241,7 @@ export class Auth {
 		this.db.run("DELETE FROM sessions WHERE expires_at <= ?", [
 			this.now().toISOString(),
 		]);
+		this.changed();
 	}
 }
 
