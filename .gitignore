@@ -1,0 +1,9 @@
+node_modules/
+dist/
+/data/
+/artifacts/
+.env
+*.db
+*.db-wal
+*.db-shm
+.private-denylist
