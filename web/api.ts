@@ -10,8 +10,10 @@ import type {
 	PhoneView,
 	StatusView,
 } from "../src/api/schema";
+import type { ApiKey as ApiKeyView } from "../src/auth/auth";
 
 export type {
+	ApiKeyView,
 	AttachmentView,
 	DeviceEventView,
 	MessagePageView,
