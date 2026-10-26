@@ -25,6 +25,7 @@ afterEach(() => {
 
 const EXPECTED_TABLES = [
 	"attachments",
+	"control_sessions",
 	"device_events",
 	"ingest_cursors",
 	"inventory_edits",
