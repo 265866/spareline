@@ -2,10 +2,12 @@
 //! runtime dependencies stay out of it.
 
 mod android;
+mod digest_mismatch;
 mod identifiers;
-mod monitor;
+pub mod monitor;
 mod phone_status;
 mod probe;
+pub mod screen;
 mod sms;
 mod text;
 mod timestamp;
@@ -16,6 +18,7 @@ pub use android::{
     Sections, ServiceState, SubscriptionRecord, parse_battery, parse_isub, parse_key_values,
     parse_parcel_string, parse_registry, parse_sim_states, section_marker, split_sections,
 };
+pub use digest_mismatch::DigestMismatch;
 pub use identifiers::{
     SubInfoCodes, SubInfoLookup, is_iccid, is_imei, sub_info_call, sub_info_codes, to_e164,
 };
