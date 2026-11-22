@@ -37,8 +37,10 @@ impl DeviceTracker {
         }
         let length = frame::parse_hex_length(&self.reader.buffered()[..4])?;
         self.reader.fill(4 + length).await?;
-        let update = self.reader.take(4 + length);
-        let payload = String::from_utf8_lossy(&update[4..]);
-        Ok(Some(DeviceEntry::parse_list(&payload)))
+        self.reader.discard(4);
+        let payload = self.reader.take(length);
+        Ok(Some(DeviceEntry::parse_list(&String::from_utf8_lossy(
+            &payload,
+        ))))
     }
 }

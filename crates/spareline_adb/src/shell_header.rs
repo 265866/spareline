@@ -15,21 +15,36 @@ pub(crate) struct ShellHeader {
 }
 
 impl ShellHeader {
+    /// The size of a header on the wire.
+    pub(crate) const SIZE: usize = 5;
+
     /// Reads a header, or `None` when the peer closed between packets.
     pub(crate) async fn read(stream: &mut TcpStream) -> Result<Option<Self>, AdbError> {
-        let Some(header) = frame::read_exact_or_end(stream, 5).await? else {
+        let Some(header) = frame::read_exact_or_end(stream, Self::SIZE).await? else {
             return Ok(None);
         };
-        let length = u32::from_le_bytes([header[1], header[2], header[3], header[4]]);
-        let length = usize::try_from(length).map_err(|_| {
-            AdbError::new(
-                AdbErrorKind::Protocol,
-                format!("shell packet of {length} bytes doesn't fit in memory"),
-            )
-        })?;
-        Ok(Some(Self {
-            id: header[0],
+        Self::parse(&header).map(Some)
+    }
+
+    /// Reads the first [`ShellHeader::SIZE`] bytes of `bytes` as a header, refusing a payload
+    /// longer than one frame may be.
+    pub(crate) fn parse(bytes: &[u8]) -> Result<Self, AdbError> {
+        let declared = u32::from_le_bytes([bytes[1], bytes[2], bytes[3], bytes[4]]);
+        let length = usize::try_from(declared)
+            .ok()
+            .filter(|&length| length <= frame::MAX_FRAME)
+            .ok_or_else(|| {
+                AdbError::new(
+                    AdbErrorKind::Protocol,
+                    format!(
+                        "refusing to read {declared} bytes in one frame (limit {})",
+                        frame::MAX_FRAME
+                    ),
+                )
+            })?;
+        Ok(Self {
+            id: bytes[0],
             length,
-        }))
+        })
     }
 }

@@ -2,9 +2,10 @@
 
 use tokio::net::TcpStream;
 
-use crate::adb_error::{AdbError, AdbErrorKind};
+use crate::adb_error::AdbError;
 use crate::frame;
 use crate::frame_reader::FrameReader;
+use crate::shell_header::ShellHeader;
 
 /// A command such as `logcat` running under the `shell,v2` protocol, so adbd ends it when this
 /// closes. Dropping it closes the connection.
@@ -33,28 +34,15 @@ impl ShellStream {
     /// Returns an error when the connection fails mid-packet or a packet is malformed.
     pub async fn next_stdout(&mut self) -> Result<Option<Vec<u8>>, AdbError> {
         loop {
-            if !self.reader.fill(5).await? {
+            if !self.reader.fill(ShellHeader::SIZE).await? {
                 return Ok(None);
             }
-            let header = self.reader.buffered();
-            let id = header[0];
-            let declared = u32::from_le_bytes([header[1], header[2], header[3], header[4]]);
-            let length = usize::try_from(declared)
-                .ok()
-                .filter(|&length| length <= frame::MAX_FRAME)
-                .ok_or_else(|| {
-                    AdbError::new(
-                        AdbErrorKind::Protocol,
-                        format!(
-                            "refusing to read {declared} bytes in one frame (limit {})",
-                            frame::MAX_FRAME
-                        ),
-                    )
-                })?;
-            self.reader.fill(5 + length).await?;
-            let packet = self.reader.take(5 + length);
+            let ShellHeader { id, length } = ShellHeader::parse(self.reader.buffered())?;
+            self.reader.fill(ShellHeader::SIZE + length).await?;
+            self.reader.discard(ShellHeader::SIZE);
+            let payload = self.reader.take(length);
             match id {
-                frame::SHELL_STDOUT => return Ok(Some(packet[5..].to_vec())),
+                frame::SHELL_STDOUT => return Ok(Some(payload)),
                 frame::SHELL_EXIT => return Ok(None),
                 _ => {}
             }

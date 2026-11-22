@@ -301,15 +301,23 @@ impl AdbClient {
     }
 }
 
-/// A shell connection that closed before its exit packet, whether cleanly or mid-header, means
-/// the phone went away; other errors pass through.
+/// A shell connection that closed before its exit packet, cleanly or mid-packet, means the phone
+/// went away; other errors pass through.
 fn ended_early(error: AdbError) -> AdbError {
     if error.kind() == AdbErrorKind::Closed {
-        AdbError::new(
-            AdbErrorKind::Closed,
-            "the shell ended without reporting an exit code (device disconnected?)".to_owned(),
-        )
+        shell_ended_early(Some(error.message()))
     } else {
         error
     }
+}
+
+/// The error for a shell that ended without an exit code, with the connection's own reason when
+/// there is one.
+fn shell_ended_early(detail: Option<&str>) -> AdbError {
+    let base = "the shell ended without reporting an exit code (device disconnected?)";
+    let message = match detail {
+        Some(detail) => format!("{base}: {detail}"),
+        None => base.to_owned(),
+    };
+    AdbError::new(AdbErrorKind::Closed, message)
 }

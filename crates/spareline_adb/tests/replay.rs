@@ -12,7 +12,7 @@ use spareline_adb::{AdbClient, AdbErrorKind, DeviceEntry, DeviceState, Endpoint}
 use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::runtime::Builder;
-use tokio::sync::oneshot::{self, Sender};
+use tokio::sync::oneshot::{self, Receiver, Sender};
 use tokio::task::{self, JoinHandle};
 use tokio::time;
 
@@ -511,10 +511,12 @@ fn a_shell_stream_yields_stdout_and_ends_at_the_exit_packet() {
     }
 }
 
-/// The address of a staged server, and the go-ahead for the rest of its reply.
+/// The address of a staged server, the go-ahead for the rest of its reply, and its word that the
+/// first part is written.
 struct Staged {
     endpoint: Endpoint,
     go: Sender<()>,
+    written: Receiver<()>,
 }
 
 /// A server that answers `OKAY` to the transport and the service, then writes `first`, waits
@@ -528,8 +530,12 @@ async fn staged_stream(first: &'static [u8], rest: &'static [u8]) -> Staged {
         .expect("the listener has an address")
         .port();
     let (go, wait) = oneshot::channel::<()>();
+    let (wrote, written) = oneshot::channel::<()>();
     tokio::spawn(async move {
         let (mut stream, _) = listener.accept().await.expect("the client connects");
+        stream
+            .set_nodelay(true)
+            .expect("the socket takes TCP_NODELAY");
         let mut request = [0; 256];
         let read = stream.read(&mut request).await.expect("the client asks");
         let okays = if request[..read].starts_with(b"0014host:track-devices-l") {
@@ -547,6 +553,8 @@ async fn staged_stream(first: &'static [u8], rest: &'static [u8]) -> Staged {
         }
         stream.write_all(b"OKAY").await.expect("the client reads");
         stream.write_all(first).await.expect("the client reads");
+        stream.flush().await.expect("the first part flushes");
+        wrote.send(()).expect("the test waits for the first part");
         wait.await.expect("the test lets the rest go");
         stream.write_all(rest).await.expect("the client reads");
         stream.shutdown().await.expect("the server closes cleanly");
@@ -554,6 +562,7 @@ async fn staged_stream(first: &'static [u8], rest: &'static [u8]) -> Staged {
     Staged {
         endpoint: Endpoint::new("127.0.0.1".to_owned(), port),
         go,
+        written,
     }
 }
 
@@ -561,8 +570,13 @@ async fn staged_stream(first: &'static [u8], rest: &'static [u8]) -> Staged {
 fn a_cancelled_device_list_read_resumes_at_the_same_byte() {
     block_on_paused_clock(async {
         let update = b"002dSPARELINE00001         device transport_id:1\n";
-        let Staged { endpoint, go } = staged_stream(&update[..2], &update[2..]).await;
+        let Staged {
+            endpoint,
+            go,
+            written,
+        } = staged_stream(&update[..2], &update[2..]).await;
         let mut tracker = AdbClient::new(endpoint).track_devices().await.unwrap();
+        written.await.expect("the server wrote the first part");
         let cancelled = time::timeout(Duration::from_millis(50), tracker.next()).await;
         assert!(
             cancelled.is_err(),
@@ -580,11 +594,16 @@ fn a_cancelled_device_list_read_resumes_at_the_same_byte() {
 fn a_cancelled_shell_stream_read_resumes_at_the_same_byte() {
     block_on_paused_clock(async {
         let packets = b"\x01\x03\0\0\0abc\x03\x01\0\0\0\0";
-        let Staged { endpoint, go } = staged_stream(&packets[..3], &packets[3..]).await;
+        let Staged {
+            endpoint,
+            go,
+            written,
+        } = staged_stream(&packets[..3], &packets[3..]).await;
         let mut stream = AdbClient::new(endpoint)
             .shell_stream(SERIAL, "logcat")
             .await
             .unwrap();
+        written.await.expect("the server wrote the first part");
         let cancelled = time::timeout(Duration::from_millis(50), stream.next_stdout()).await;
         assert!(
             cancelled.is_err(),
@@ -599,7 +618,11 @@ fn a_cancelled_shell_stream_read_resumes_at_the_same_byte() {
 #[test]
 fn a_shell_stream_cut_mid_header_says_how_many_bytes_arrived() {
     block_on(async {
-        let Staged { endpoint, go } = staged_stream(b"\x01\x03\0", b"").await;
+        let Staged {
+            endpoint,
+            go,
+            written: _written,
+        } = staged_stream(b"\x01\x03\0", b"").await;
         let mut stream = AdbClient::new(endpoint)
             .shell_stream(SERIAL, "logcat")
             .await
@@ -617,7 +640,11 @@ fn a_shell_stream_cut_mid_header_says_how_many_bytes_arrived() {
 #[test]
 fn a_shell_cut_mid_header_reports_the_phone_gone() {
     block_on(async {
-        let Staged { endpoint, go } = staged_stream(b"\x01\x03\0", b"").await;
+        let Staged {
+            endpoint,
+            go,
+            written: _written,
+        } = staged_stream(b"\x01\x03\0", b"").await;
         go.send(()).expect("the server waits");
         let error = AdbClient::new(endpoint)
             .shell(SERIAL, "true")
@@ -625,7 +652,8 @@ fn a_shell_cut_mid_header_reports_the_phone_gone() {
             .unwrap_err();
         assert_eq!(
             error.message(),
-            "the shell ended without reporting an exit code (device disconnected?)"
+            "the shell ended without reporting an exit code (device disconnected?): connection \
+             closed after 3 of 5 expected bytes"
         );
     });
 }
@@ -669,5 +697,103 @@ fn a_nul_in_a_push_path_is_refused() {
             .await
             .unwrap_err();
         assert_eq!(error.kind(), AdbErrorKind::Protocol);
+    });
+}
+
+#[test]
+fn a_shell_stream_stops_at_the_exit_packet_while_the_connection_stays_open() {
+    block_on(async {
+        let packets = b"\x01\x03\0\0\0abc\x03\x01\0\0\0\0\x01\x03\0\0\0xyz";
+        let Staged {
+            endpoint,
+            go,
+            written: _written,
+        } = staged_stream(packets, b"").await;
+        let mut stream = AdbClient::new(endpoint)
+            .shell_stream(SERIAL, "logcat")
+            .await
+            .unwrap();
+        assert_eq!(stream.next_stdout().await.unwrap(), Some(b"abc".to_vec()));
+        assert_eq!(
+            stream.next_stdout().await.unwrap(),
+            None,
+            "the exit packet ends it"
+        );
+        go.send(()).expect("the server waits");
+    });
+}
+
+/// A server that answers `OKAY` to the transport and the service, then sends `chunk` `count`
+/// times, stopping when the client goes away.
+async fn flooding_server(chunk: Vec<u8>, count: usize) -> Endpoint {
+    let listener = TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("a loopback port is free");
+    let port = listener
+        .local_addr()
+        .expect("the listener has an address")
+        .port();
+    tokio::spawn(async move {
+        let (mut stream, _) = listener.accept().await.expect("the client connects");
+        let mut request = [0; 256];
+        for _ in 0..2 {
+            let asked = stream.read(&mut request).await.expect("the client asks");
+            assert!(asked > 0, "the client sends a request");
+            stream.write_all(b"OKAY").await.expect("the client reads");
+        }
+        for _ in 0..count {
+            if stream.write_all(&chunk).await.is_err() {
+                return;
+            }
+        }
+    });
+    Endpoint::new("127.0.0.1".to_owned(), port)
+}
+
+#[test]
+fn exec_refuses_runaway_output() {
+    block_on(async {
+        let endpoint = flooding_server(vec![b'x'; 1024 * 1024], 40).await;
+        let error = AdbClient::new(endpoint)
+            .exec(SERIAL, "cat /dev/zero")
+            .await
+            .unwrap_err();
+        assert_eq!(error.kind(), AdbErrorKind::Protocol);
+        assert_eq!(
+            error.message(),
+            "refusing more than 33554432 bytes of command output"
+        );
+    });
+}
+
+#[test]
+fn shell_refuses_runaway_output() {
+    block_on(async {
+        let payload = 4 * 1024 * 1024_u32;
+        let mut packet = vec![1];
+        packet.extend_from_slice(&payload.to_le_bytes());
+        packet.resize(5 + payload as usize, b'x');
+        let endpoint = flooding_server(packet, 10).await;
+        let error = AdbClient::new(endpoint)
+            .shell(SERIAL, "yes")
+            .await
+            .unwrap_err();
+        assert_eq!(error.kind(), AdbErrorKind::Protocol);
+        assert!(error.message().starts_with("refusing more than"), "{error}");
+    });
+}
+
+#[test]
+fn an_open_stream_that_times_out_names_the_service() {
+    block_on_paused_clock(async {
+        let FakeServer { endpoint, task } = server_that(b"").await;
+        let client = AdbClient::new(endpoint).with_call_timeout(Duration::from_millis(100));
+        let error = client.open_stream(SERIAL, "tcp:27183").await.unwrap_err();
+        assert_eq!(error.kind(), AdbErrorKind::Timeout);
+        assert_eq!(
+            error.message(),
+            "opening tcp:27183 on SPARELINE00001 timed out"
+        );
+        task.abort();
     });
 }
