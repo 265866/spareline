@@ -2,7 +2,8 @@
 # Checks the kit's remove_unused_images with a stand-in podman: an image retired by an update is
 # removed only when no name is left on it, so a name an operator added to keep a rollback copy
 # keeps that image. Needs bash and coreutils, not Podman or systemd.
-#   bash deploy/tests/remove-unused-images.sh
+# Run it from the kit's directory, the one that holds podman/ and tests/:
+#   bash tests/remove-unused-images.sh
 # shellcheck source-path=SCRIPTDIR
 set -euo pipefail
 kit=$(cd "$(dirname "$0")/../podman" && pwd)
