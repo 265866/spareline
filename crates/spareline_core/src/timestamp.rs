@@ -17,9 +17,18 @@ pub struct Timestamp {
 }
 
 impl Timestamp {
-    /// The time `millis` milliseconds after the Unix epoch.
+    /// The time `millis` milliseconds after the Unix epoch, clamped to the years 0 to 9999, the
+    /// only ones the 24-character form can hold. A phone reporting a corrupt date stores the
+    /// nearest end rather than text that sorts wrongly and reads back as nothing.
     #[must_use]
     pub const fn from_millis(millis: i64) -> Self {
+        let millis = if millis < MIN_MILLIS {
+            MIN_MILLIS
+        } else if millis > MAX_MILLIS {
+            MAX_MILLIS
+        } else {
+            millis
+        };
         Self { millis }
     }
 
@@ -29,17 +38,18 @@ impl Timestamp {
         Self::from_system_time(SystemTime::now())
     }
 
-    /// The time `time` names, truncated to the millisecond. Times outside the years 0 to 9999
-    /// clamp to the nearest end.
+    /// The time `time` names, rounded down to the millisecond, as JavaScript's `Date` holds it
+    /// and as [`Display`] reads it. Times outside the years 0 to 9999 clamp to the nearest end.
     #[must_use]
     pub fn from_system_time(time: SystemTime) -> Self {
         let millis = match time.duration_since(UNIX_EPOCH) {
             Ok(after) => i64::try_from(after.as_millis()).unwrap_or(i64::MAX),
             Err(before) => {
-                i64::try_from(before.duration().as_millis()).map_or(i64::MIN, |millis| -millis)
+                let earlier = before.duration().as_nanos().div_ceil(1_000_000);
+                i64::try_from(earlier).map_or(i64::MIN, |millis| -millis)
             }
         };
-        Self::from_millis(millis.clamp(MIN_MILLIS, MAX_MILLIS))
+        Self::from_millis(millis)
     }
 
     /// Milliseconds after the Unix epoch.
@@ -52,14 +62,14 @@ impl Timestamp {
     #[must_use]
     pub fn plus(self, duration: Duration) -> Self {
         let delta = i64::try_from(duration.as_millis()).unwrap_or(i64::MAX);
-        Self::from_millis(self.millis.saturating_add(delta).min(MAX_MILLIS))
+        Self::from_millis(self.millis.saturating_add(delta))
     }
 
     /// The time `duration` earlier, saturating at the start of the year 0.
     #[must_use]
     pub fn minus(self, duration: Duration) -> Self {
         let delta = i64::try_from(duration.as_millis()).unwrap_or(i64::MAX);
-        Self::from_millis(self.millis.saturating_sub(delta).max(MIN_MILLIS))
+        Self::from_millis(self.millis.saturating_sub(delta))
     }
 
     /// How long after `earlier` this is, or zero when it isn't later.
@@ -89,17 +99,7 @@ impl Timestamp {
         if separators.iter().any(|&(index, byte)| bytes[index] != byte) {
             return None;
         }
-        let field = |start: usize, end: usize| -> Option<i64> {
-            let digits = &bytes[start..end];
-            if !digits.iter().all(u8::is_ascii_digit) {
-                return None;
-            }
-            Some(
-                digits
-                    .iter()
-                    .fold(0, |value, digit| value * 10 + i64::from(digit - b'0')),
-            )
-        };
+        let field = |start: usize, end: usize| digits(&bytes[start..end]);
         let year = field(0, 4)?;
         let month = field(5, 7)?;
         let day = field(8, 10)?;
@@ -121,8 +121,32 @@ impl Timestamp {
     /// Reads a calendar date, `YYYY-MM-DD`, as midnight UTC that day.
     #[must_use]
     pub fn parse_date(text: &str) -> Option<Self> {
-        Self::parse_iso(&format!("{text}T00:00:00.000Z"))
+        let bytes = text.as_bytes();
+        if bytes.len() != 10 || bytes[4] != b'-' || bytes[7] != b'-' {
+            return None;
+        }
+        let year = digits(&bytes[0..4])?;
+        let month = digits(&bytes[5..7])?;
+        let day = digits(&bytes[8..10])?;
+        if !(1..=12).contains(&month) || day < 1 || day > days_in_month(year, month) {
+            return None;
+        }
+        Some(Self::from_millis(
+            days_from_civil(year, month, day) * MILLIS_PER_DAY,
+        ))
     }
+}
+
+/// The value of ASCII decimal digits, or `None` when any byte isn't one.
+fn digits(bytes: &[u8]) -> Option<i64> {
+    if !bytes.iter().all(u8::is_ascii_digit) {
+        return None;
+    }
+    Some(
+        bytes
+            .iter()
+            .fold(0, |value, digit| value * 10 + i64::from(digit - b'0')),
+    )
 }
 
 /// The earliest time the 24-character form can hold: the start of the year 0.
@@ -247,11 +271,59 @@ mod tests {
     }
 
     #[test]
+    fn refuses_same_length_near_misses() {
+        for text in [
+            "2026-10-28T08:41:5a.104Z",
+            "+026-10-28T08:41:51.104Z",
+            "2026-10-28T08:60:00.000Z",
+            "2026-10-28T08:41:60.000Z",
+            "1900-02-29T00:00:00.000Z",
+            "2100-02-29T00:00:00.000Z",
+        ] {
+            assert_eq!(text.len(), 24, "{text} is a same-length near miss");
+            assert_eq!(Timestamp::parse_iso(text), None, "{text} is refused");
+        }
+        assert!(
+            Timestamp::parse_iso("2000-02-29T00:00:00.000Z").is_some(),
+            "2000 is a leap year"
+        );
+    }
+
+    #[test]
+    fn clamps_to_the_years_the_form_can_hold() {
+        assert_eq!(Timestamp::from_millis(i64::MAX).millis(), MAX_MILLIS);
+        assert_eq!(Timestamp::from_millis(i64::MIN).millis(), MIN_MILLIS);
+        let last = Timestamp::from_millis(MAX_MILLIS);
+        assert_eq!(last.plus(Duration::from_millis(1)), last, "plus saturates");
+        assert_eq!(last.plus(Duration::MAX), last, "plus saturates");
+        let first = Timestamp::from_millis(MIN_MILLIS);
+        assert_eq!(
+            first.minus(Duration::from_millis(1)),
+            first,
+            "minus saturates"
+        );
+        assert_eq!(first.minus(Duration::MAX), first, "minus saturates");
+    }
+
+    #[test]
+    fn reads_system_time_rounded_down() {
+        let after = UNIX_EPOCH + Duration::from_micros(1999);
+        assert_eq!(
+            Timestamp::from_system_time(after).to_string(),
+            "1970-01-01T00:00:00.001Z"
+        );
+        let before = UNIX_EPOCH - Duration::from_micros(1500);
+        assert_eq!(Timestamp::from_system_time(before).millis(), -2);
+    }
+
+    #[test]
     fn reads_a_calendar_date_as_midnight() {
         assert_eq!(
             Timestamp::parse_date("2026-10-21"),
             Some(Timestamp::from_millis(1_792_540_800_000))
         );
         assert_eq!(Timestamp::parse_date("2026-10-21T00:00"), None);
+        assert_eq!(Timestamp::parse_date("2026-02-29"), None);
+        assert_eq!(Timestamp::parse_date("2026-1a-21"), None);
     }
 }
