@@ -100,6 +100,12 @@ pub(crate) fn provider_time(
     }
 }
 
+/// An optional time such as `date_sent`: a value out of range reads as no time, so a garbled
+/// sent time never costs the text, whose required received time decides whether it is stored.
+fn optional_time(value: Option<i64>, scale: i64) -> Option<Timestamp> {
+    provider_time(value, scale).ok().flatten()
+}
+
 /// The message an SMS inbox row (of [`SMS_COLUMNS`](crate::SMS_COLUMNS)) holds. SMS dates are
 /// milliseconds after the epoch; a `date_sent` of zero or less, or not an integer, is no sent
 /// time.
@@ -120,7 +126,7 @@ pub fn sms_message(row: &ContentRow) -> Result<ProviderMessage, ProviderRowError
         sender: row.get("address").map(str::to_owned),
         body,
         subject: None,
-        sent_at: provider_time(row.integer("date_sent"), 1)?,
+        sent_at: optional_time(row.integer("date_sent"), 1),
         received_at,
         parts: Vec::new(),
     })
@@ -164,7 +170,7 @@ pub fn mms_message(
             .map(str::to_owned),
         body: texts.join("\n"),
         subject: (!subject.is_empty()).then_some(subject),
-        sent_at: provider_time(sent_seconds, 1000)?,
+        sent_at: optional_time(sent_seconds, 1000),
         received_at,
         parts: ordered
             .iter()
@@ -216,6 +222,17 @@ mod tests {
                 parts: Vec::new(),
             }
         );
+    }
+
+    #[test]
+    fn a_garbled_sent_time_keeps_the_text() {
+        let message = sms(
+            "_id=4, thread_id=2, address=550, date=1792637380314, date_sent=253402300800000, \
+             sub_id=1, read=1, type=1, hex(body)=4869",
+        )
+        .expect("the text is stored without a sent time");
+        assert_eq!(message.sent_at, None);
+        assert_eq!(message.body, "Hi");
     }
 
     #[test]

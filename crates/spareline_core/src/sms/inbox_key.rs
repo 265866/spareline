@@ -8,7 +8,7 @@ use crate::sms::{ContentRow, Provider, provider_message};
 pub struct InboxKey {
     /// The provider's `_id`.
     pub provider_id: i64,
-    /// The row's `date`: milliseconds for SMS, seconds for MMS.
+    /// The row's `date`, converted from milliseconds for SMS and seconds for MMS.
     pub received_at: Timestamp,
 }
 

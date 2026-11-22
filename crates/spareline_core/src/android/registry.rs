@@ -223,7 +223,7 @@ impl PrimarySignal {
         let dbm = dbm_field
             .and_then(|field| text::number_after(segment, field, Sign::Signed, Start::WordStart))
             .and_then(text::parse_int)
-            .filter(|raw| raw.abs() != UNAVAILABLE);
+            .filter(|raw| raw.unsigned_abs() != UNAVAILABLE.unsigned_abs());
         if level == 0 && dbm.is_none() {
             return Self {
                 level,
@@ -287,6 +287,14 @@ mod tests {
         let mut states = parse_registry(&format!("  Phone Id=0\n{fields}"));
         assert_eq!(states.len(), 1, "one slot");
         states.remove(0)
+    }
+
+    #[test]
+    fn a_garbled_signal_value_reads_without_panicking() {
+        let radios = parse_registry(
+            "  Phone Id=0\n    mSignalStrength=SignalStrength: mLte=CellSignalStrengthLte: rssi=-51 rsrp=-9223372036854775808 rsrq=-8 rssnr=2147483647 cqi=2147483647 ta=2147483647 level=3\n",
+        );
+        assert_eq!(radios.len(), 1, "{radios:?}");
     }
 
     #[test]

@@ -42,16 +42,16 @@ pub struct UidBytes {
 pub struct SimDataUsage {
     /// The subscription.
     pub sub_id: i64,
-    /// The slot the SIM is in, when an active subscription names it.
-    pub slot: Option<u32>,
     /// Bytes received.
     pub rx: u64,
     /// Bytes sent.
     pub tx: u64,
-    /// Whether `rx + tx` is above the data threshold.
-    pub over: bool,
     /// The apps that used it, most first.
     pub uids: Vec<UidBytes>,
+    /// The slot the SIM is in, when an active subscription names it.
+    pub slot: Option<u32>,
+    /// Whether `rx + tx` is above the data threshold.
+    pub over: bool,
 }
 
 impl SimUsage {
@@ -246,7 +246,7 @@ mod tests {
         let served = usage.clone().with_threshold(Some(0), 1_000_000);
         assert_eq!(
             serde_json::to_string(&served).expect("serializes"),
-            r#"{"subId":1,"slot":0,"rx":600000,"tx":50000,"over":false,"uids":[{"uid":10101,"bytes":650000}]}"#
+            r#"{"subId":1,"rx":600000,"tx":50000,"uids":[{"uid":10101,"bytes":650000}],"slot":0,"over":false}"#
         );
         assert!(
             usage.clone().with_threshold(None, 649_999).over,
