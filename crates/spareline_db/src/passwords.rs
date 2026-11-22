@@ -183,6 +183,15 @@ impl Default for Passwords {
 /// as Bun's fixed worker pool made them wait.
 const MAX_CONCURRENT_HASHES: usize = 4;
 
+/// How many argon2 runs the process lets go at once: 4, fewer on a machine with fewer CPUs. A
+/// server that queues password checks before they take a thread sizes its queue from this, so it
+/// never holds more threads than the gate lets run.
+#[must_use]
+pub fn max_concurrent_hashes() -> usize {
+    let cpus = thread::available_parallelism().map_or(1, usize::from);
+    cpus.min(MAX_CONCURRENT_HASHES)
+}
+
 /// The largest cost a stored hash may name. Memory is capped at Bun's 64 MiB, the only cost any
 /// writer of the database used, so the gate's four places stay within the container's memory
 /// even for a tampered row.
@@ -213,13 +222,10 @@ impl HashGate {
         }
     }
 
-    /// The process's gate: [`MAX_CONCURRENT_HASHES`] places, fewer on a machine with fewer CPUs.
+    /// The process's gate, of [`max_concurrent_hashes`] places.
     fn global() -> &'static Self {
         static GATE: OnceLock<HashGate> = OnceLock::new();
-        GATE.get_or_init(|| {
-            let cpus = thread::available_parallelism().map_or(1, usize::from);
-            Self::new(cpus.min(MAX_CONCURRENT_HASHES))
-        })
+        GATE.get_or_init(|| Self::new(max_concurrent_hashes()))
     }
 
     /// Waits for a place.
@@ -396,6 +402,13 @@ mod tests {
         drop(held);
         entry.recv().expect("the waiting run enters");
         late_run.join().unwrap();
+    }
+
+    #[test]
+    fn the_global_gate_has_as_many_places_as_the_cpus_allow_up_to_four() {
+        let cpus = thread::available_parallelism().map_or(1, usize::from);
+        assert_eq!(max_concurrent_hashes(), cpus.min(4));
+        assert_eq!(HashGate::global().limit, max_concurrent_hashes());
     }
 
     #[test]
