@@ -1,0 +1,17 @@
+# Lints suggest changes to public signatures too, as the Google Rust Style Guide's naming and
+# borrowing rules ask. A published library that has to keep a signature writes an `expect` with
+# the reason on that item.
+avoid-breaking-exported-api = false
+
+# A failing test should panic at the call that failed.
+allow-unwrap-in-tests = true
+
+disallowed-methods = [
+    { path = "std::panic::catch_unwind", reason = "Google Rust Style Guide: don't call `panic::catch_unwind`" },
+    { path = "std::sync::PoisonError::into_inner", reason = "Google Rust Style Guide: never reach inside a poisoned mutex" },
+    { path = "std::sync::PoisonError::get_ref", reason = "Google Rust Style Guide: never reach inside a poisoned mutex" },
+    { path = "std::sync::PoisonError::get_mut", reason = "Google Rust Style Guide: never reach inside a poisoned mutex" },
+    { path = "std::sync::Mutex::clear_poison", reason = "Google Rust Style Guide: never reach inside a poisoned mutex" },
+    { path = "std::sync::RwLock::clear_poison", reason = "Google Rust Style Guide: never reach inside a poisoned mutex" },
+    { path = "core::iter::Iterator::for_each", reason = "Google Rust Style Guide: avoid `Iterator::for_each`; write a `for` loop" },
+]

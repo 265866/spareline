@@ -1,0 +1,87 @@
+# Settings for the custom lints from trellis, which `just dylint` runs. Every key is required: the
+# lints have no built-in defaults. Changing this file is a rule change.
+[trellis_lints]
+# Crates allowed to contain unsafe code (`unsafe_outside_unsafe_crate`). Keep unsafe code in a crate
+# of its own and list it here.
+unsafe_crates = []
+# Type names that may be written with their module, such as `io::Error` (`qualified_type_path`).
+ambiguous_type_names = ["Error", "Result"]
+# Crates whose `#[doc(hidden)]` items this project owns and may use (`foreign_doc_hidden`).
+owned_crate_prefixes = [
+    "spareline",
+]
+# Lowercase words a doc comment may start with (`doc_starts_lowercase`).
+lowercase_doc_words = [
+    "spareline",
+    "e.g.",
+    "i.e.",
+]
+# Crates that may define macros (`macro_definition`). Listing a crate is a rule change.
+macro_crates = []
+# Crates whose macros may write `allow`, `warn`, `expect` and `ignore` attributes into this
+# project's code (`suppression_policy`, `disabled_code`). List a crate only once you have read what
+# its macros write. Name the crate that defines the macro, such as `serde_derive` for
+# `#[derive(Serialize)]`. Listing a crate also trusts any lint level its macros forward from their
+# arguments, so read what they forward too. A lint level a trusted macro writes over code written in
+# the source, a literal or a path included, may name only the lints `trusted_macro_lints` below
+# lists for the crate, and never a group; text alone, such as a `rename` string, passes under lints
+# that never read a literal, and a short path, such as the function in `deserialize_with =
+# "defaults::present"`, under lints that can't fire on one. trellis read the ones below at the
+# versions noted, which its own tests pin. This project's `Cargo.lock` may hold newer ones, and
+# nothing reads those again. At any version, `just dylint` rejects an unlisted lint or a group that
+# a trusted macro writes over code it passes through with the caller's spans, but it doesn't see
+# code a macro re-emits with spans of its own. trellis lists no crate whose macros write lint
+# groups or `allow`s over the code passed to them, such as `clap_derive`, `tokio_macros`, `tokio`
+# and `tracing_attributes` (see the idioms in `docs/style.md`).
+trusted_macro_crates = [
+    "alloc",
+    "core",
+    "std",
+    # `ensure!`, 1.0.104: `allow(unused_imports)` on a `use` of its own.
+    "anyhow",
+    # `#[derive(Serialize, Deserialize)]`, 1.0.229: `allow(non_upper_case_globals,
+    # unused_attributes, unused_qualifications, clippy::absolute_paths)` on the `const _` block that
+    # holds its impls, which contain the strings of `rename`, `alias` and `tag` and call the
+    # function a string such as `default = ".."` names, and `allow`s of `unused_extern_crates`,
+    # `clippy::useless_attribute`, `non_camel_case_types`, `unused_variables` and `deprecated` on
+    # items of its own inside it. A function named in a string as plain text, by its bare name or
+    # through one module or type, passes when its last segment isn't in scope by itself, and so does
+    # a type or `bound` whose every path does, generic arguments included; a path through `crate`,
+    # `self` or `super`, of three segments, or with a turbofish fails, since `unused_qualifications`
+    # and `clippy::absolute_paths` could report those.
+    "serde_derive",
+    # `#[derive(Error)]`, 2.0.21: `allow(unused_qualifications)` on its impls, which contain the
+    # message and its format arguments; `allow(unused_variables, deprecated,
+    # clippy::used_underscore_binding)` on an enum's `match` over its messages; `allow(deprecated,
+    # unused_qualifications)` on the `From` impl for a `#[from]` field; and lint levels on code of
+    # its own.
+    "thiserror_impl",
+    # `info!` and the other event and span macros, 0.1.44: `allow(unused_imports)` on a `use` of
+    # their own.
+    "tracing",
+]
+
+# The operating systems CI builds for (`disabled_code`). A `cfg` predicate may name only these, and
+# `unix` if Linux or macOS is one: no check compiles code for any other target.
+ci_targets = ["linux"]
+
+# For a crate in `trusted_macro_crates`, the lints its macros may set the level of over code written
+# in this project's source (`suppression_policy`). Listing a lint is a rule change: list it only
+# once you have read that the macro writes it, and that no code following the style guide trips it,
+# so the level hides nothing clippy would report.
+[trellis_lints.trusted_macro_lints]
+# `matches!` writes `allow(non_exhaustive_omitted_patterns)` over its scrutinee and guard. The lint
+# is unstable and off by default, and a stable build can't turn it on, so it hides nothing.
+core = ["non_exhaustive_omitted_patterns"]
+# Nothing: a message is text, which none of the lints thiserror allows reads, so a format argument
+# after the message, the one code it could hide, fails.
+thiserror_impl = []
+
+# The lint levels every crate must compile with (`missing_workspace_lints`).
+[trellis_lints.required_lint_levels]
+missing_docs = "warn"
+unsafe_code = "deny"
+"clippy::pedantic" = "warn"
+"clippy::unwrap_used" = "warn"
+suppression_policy = "warn"
+disabled_code = "warn"

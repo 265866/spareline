@@ -1,0 +1,46 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:recommended",
+    ":semanticCommits",
+    "schedule:weekly"
+  ],
+  "minimumReleaseAge": "7 days",
+  "packageRules": [
+    {
+      "description": "Crate updates other than major ones arrive as one PR.",
+      "groupName": "cargo",
+      "matchManagers": [
+        "cargo"
+      ],
+      "matchUpdateTypes": [
+        "minor",
+        "patch"
+      ]
+    },
+    {
+      "description": "The web UI's package updates other than major ones arrive as one PR.",
+      "groupName": "web UI packages",
+      "matchManagers": [
+        "bun"
+      ],
+      "matchUpdateTypes": [
+        "minor",
+        "patch"
+      ]
+    },
+    {
+      "description": "trellis owns the toolchain, action and image pins, so they arrive with a trellis update rather than from this repository's Renovate. The update is a rule change, so it can't also fix code; fix what new rules flag in a PR before it.",
+      "matchManagers": [
+        "copier"
+      ],
+      "minimumReleaseAge": "0 days",
+      "semanticCommitType": "build"
+    }
+  ],
+  "enabledManagers": [
+    "bun",
+    "cargo",
+    "copier"
+  ]
+}

@@ -1,0 +1,49 @@
+# `just deny` checks dependencies for advisories, licenses, banned crates and sources.
+[graph]
+targets = [
+    "x86_64-unknown-linux-gnu",
+    "aarch64-unknown-linux-gnu",
+]
+all-features = true
+
+[advisories]
+# An unmaintained crate fails only when this project depends on it directly.
+unmaintained = "workspace"
+ignore = []
+
+[licenses]
+# Keep this list in step with `accepted` in about.toml, which writes the release's license notices.
+allow = ["Apache-2.0", "BSD-2-Clause", "BSD-3-Clause", "ISC", "MIT", "Unicode-3.0", "Zlib"]
+confidence-threshold = 0.9
+
+[licenses.private]
+ignore = true
+
+[bans]
+multiple-versions = "warn"
+wildcards = "deny"
+allow-wildcard-paths = true
+
+[[bans.deny]]
+crate = "ctor"
+reason = "Google Rust Style Guide: don't run code before main()"
+
+[[bans.deny]]
+crate = "inventory"
+reason = "Google Rust Style Guide: don't run code before main()"
+
+[[bans.deny]]
+crate = "linkme"
+reason = "Google Rust Style Guide: don't run code before main()"
+
+[[bans.deny]]
+crate = "paste"
+reason = "builds identifiers and attributes the custom lints can't read"
+
+[[bans.deny]]
+crate = "pastey"
+reason = "builds identifiers and attributes the custom lints can't read"
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"

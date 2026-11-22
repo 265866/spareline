@@ -1,0 +1,28 @@
+# release-plz keeps a release PR open that bumps the version and updates CHANGELOG.md from the
+# conventional commits on main. Merging it tags the release, and .github/workflows/release.yml
+# builds and publishes it.
+[workspace]
+# Versions come from v* tags, and nothing is published to crates.io.
+git_only = true
+semver_check = false
+# Before 1.0, a feat commit moves 0.1 to 0.2 rather than 0.1.0 to 0.1.1.
+features_always_increment_minor = true
+release_always = false
+pr_labels = ["release"]
+git_tag_name = "v{{ version }}"
+# The workspace shares one version and one tag, which only the main package creates.
+git_tag_enable = false
+# The release workflow creates the GitHub release once its files are built.
+git_release_enable = false
+changelog_update = false
+
+# The main package holds the one CHANGELOG.md. `changelog_include` lists every other crate, so
+# their commits reach the release notes; `trellis-policy check` fails on a crate it misses.
+[[package]]
+name = "spareline"
+changelog_path = "./CHANGELOG.md"
+changelog_update = true
+changelog_include = [
+    "spareline_core",
+]
+git_tag_enable = true

@@ -1,0 +1,12 @@
+/target
+
+# Local agent and editor state. A tracked agent file still fails `just policy`.
+/.claude/
+.DS_Store
+/.idea/
+/.vscode/
+*.swp
+
+# The web UI's packages and build.
+/crates/spareline/web/node_modules/
+/crates/spareline/web/dist/

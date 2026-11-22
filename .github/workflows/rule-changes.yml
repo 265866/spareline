@@ -1,0 +1,142 @@
+name: Rule changes
+
+# A pull request changes either the rules or the code they check, never both (see CONTRIBUTING.md).
+# It runs on `pull_request_target`, so a pull request can't change how it is judged: GitHub takes
+# this file from the base branch, never from the pull request, and the `check` job checks out the
+# base commit and runs the `trellis-policy` it pins. The pull request's commits are fetched as git
+# objects, which `trellis-policy rule-changes` reads with `git merge-base`, `git diff` and
+# `git show`; nothing from the pull request is checked out, built or run.
+#
+# Check runs from `pull_request_target` can attach to the base branch's commit, where they don't
+# satisfy a required check on the pull request's head. So the verdict is also a commit status,
+# "Rule changes stand alone", on the head commit, and that status is the one to require. In this
+# file, only the `pending` and `report` jobs may write statuses, and they run no repository code;
+# the `check` job, which builds and runs the base commit's code, can only read. The required status
+# names GitHub Actions as its source, not this workflow, so any workflow run in this repository
+# with `statuses: write` can set it. A pull request from a branch of this repository that adds or
+# edits a workflow to set it would defeat the check, and that workflow is a change under
+# `.github/` in the same diff.
+#
+# The status is pending until a run that wasn't cancelled reports. A newer event for the same
+# pull request cancels an older run, which then leaves the status for the newer run to set. Every
+# event runs the whole check: `edited` matters when the pull request moves to another base branch,
+# and a title or body edit reruns the check rather than skip, since a skipped or cancelled run must
+# never count as a pass.
+#
+# A public repository needs an Actions policy that allows `pull_request_target` for this file, or
+# GitHub doesn't run it; in a public project, `just setup-github` adds the policy. Private
+# repositories don't need it.
+
+on:
+  # zizmor: ignore[dangerous-triggers] No job checks out, builds or runs the pull request's code; the job that runs the base branch's code can only read, and the jobs that write statuses run no repository code.
+  pull_request_target:
+    types: [opened, synchronize, reopened, edited]
+
+permissions: {}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  pending:
+    name: Mark the rule-change status pending
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      statuses: write
+    steps:
+      - name: Set the head commit's status to pending
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          gh api --method POST "repos/$GITHUB_REPOSITORY/statuses/$HEAD_SHA" \
+            -f state=pending \
+            -f context="Rule changes stand alone" \
+            -f description="Checking that rules and code change in separate pull requests" \
+            -f target_url="$RUN_URL" > /dev/null
+
+  check:
+    name: Check that rules and code change separately
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    outputs:
+      verdict: ${{ steps.verdict.outputs.verdict }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      # The token goes to this one command through the environment, not the repository's git
+      # configuration, so no later step can read it from disk.
+      - name: Fetch the pull request's commits without checking them out
+        env:
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          TOKEN: ${{ github.token }}
+        run: |
+          auth=$(printf 'x-access-token:%s' "$TOKEN" | base64 --wrap=0)
+          echo "::add-mask::$auth"
+          GIT_CONFIG_COUNT=1 \
+            GIT_CONFIG_KEY_0="http.https://github.com/.extraheader" \
+            GIT_CONFIG_VALUE_0="AUTHORIZATION: basic $auth" \
+            git fetch --no-tags --quiet origin "$HEAD_SHA"
+
+      - uses: taiki-e/install-action@ab49d3c64680143e184118bed66a46419fc15519 # v2.90.5
+        with:
+          tool: just@1.59.0
+
+      # Nothing is cached, so a pull request can't plant a build cache that this job would restore.
+      # The verdict is `pass` or `mixed` (rules and code changed together), and is missing when the
+      # checker couldn't build or judge, which the report treats as a failure.
+      - name: Check that rules and the code they check change in separate pull requests
+        id: verdict
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          rustup toolchain install
+          just install-policy
+          status=0
+          target/trellis-policy/bin/trellis-policy rule-changes "$BASE_SHA" --head "$HEAD_SHA" || status=$?
+          case "$status" in
+            0) echo "verdict=pass" >> "$GITHUB_OUTPUT" ;;
+            1) echo "verdict=mixed" >> "$GITHUB_OUTPUT" ;;
+          esac
+          exit "$status"
+
+  report:
+    name: Report the rule-change status
+    needs: [pending, check]
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      statuses: write
+    steps:
+      - name: Set the head commit's status to the verdict
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          RESULT: ${{ needs.check.result }}
+          VERDICT: ${{ needs.check.outputs.verdict }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          case "$RESULT/$VERDICT" in
+            success/pass) state=success description="Rules and code change in separate pull requests" ;;
+            failure/mixed) state=failure description="Rules and code change together; split them into separate pull requests" ;;
+            *) state=failure description="The check couldn't judge this pull request ($RESULT); see the run" ;;
+          esac
+          gh api --method POST "repos/$GITHUB_REPOSITORY/statuses/$HEAD_SHA" \
+            -f state="$state" \
+            -f context="Rule changes stand alone" \
+            -f description="$description" \
+            -f target_url="$RUN_URL" > /dev/null

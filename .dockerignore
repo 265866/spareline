@@ -1,0 +1,6 @@
+.git
+target
+!target/THIRD-PARTY-LICENSES.html
+!target/THIRD-PARTY-LICENSES-WEB.txt
+crates/spareline/web/node_modules
+crates/spareline/web/dist

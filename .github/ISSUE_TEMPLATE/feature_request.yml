@@ -1,0 +1,23 @@
+name: Feature request
+description: Something it should do that it doesn't
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem
+      description: What you are trying to do, and what gets in the way.
+    validations:
+      required: true
+  - type: textarea
+    id: change
+    attributes:
+      label: The change you want
+      description: What it should do instead.
+    validations:
+      required: true
+  - type: textarea
+    id: workarounds
+    attributes:
+      label: Workarounds you tried
+      description: What you do today instead, and why it falls short.

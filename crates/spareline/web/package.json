@@ -1,0 +1,12 @@
+{
+    "name": "spareline-web",
+    "private": true,
+    "type": "module",
+    "scripts": {
+        "build": "bun build ./index.html --outdir dist --minify",
+        "check": "tsc --noEmit"
+    },
+    "devDependencies": {
+        "typescript": "7.0.2"
+    }
+}

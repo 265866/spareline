@@ -1,0 +1,25 @@
+name: PR title
+
+# Squash merges use the PR title as the commit on main.
+
+on:
+  pull_request:
+    types: [opened, edited, synchronize, reopened]
+
+permissions: {}
+
+jobs:
+  check:
+    name: PR title
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Check the title is a conventional commit
+        env:
+          TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          pattern='^(build|chore|ci|docs|feat|fix|perf|refactor|revert|style|test)(\([a-z0-9_-]+\))?!?: [^ ].*$'
+          if [[ ! "$TITLE" =~ $pattern ]]; then
+            echo "::error::The PR title is not a conventional commit title, such as 'feat(cli): add a --json flag' or 'fix(config)!: reject unknown keys'."
+            exit 1
+          fi

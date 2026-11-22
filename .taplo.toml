@@ -1,0 +1,9 @@
+exclude = ["target/**"]
+
+[formatting]
+column_width = 100
+indent_string = "    "
+reorder_keys = false
+reorder_arrays = false
+# An array written one item per line stays that way.
+array_auto_collapse = false

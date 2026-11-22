@@ -1,0 +1,269 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  # Pull requests share a group so a new push cancels the stale run; every commit on main gets
+  # its own run.
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  quick:
+    name: Quick checks
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      # The answer is public, so the releases and SECURITY.md rely on what only a public repository
+      # has, and a private one would fail first at a release. It checks one way only, since the
+      # documented switch to public makes the repository public before the answer.
+      - name: Check the repository is public
+        env:
+          VISIBILITY: ${{ github.event.repository.visibility }}
+        run: |
+          if [ -z "$VISIBILITY" ]; then
+            echo "::notice::This event doesn't say the repository's visibility, so it isn't checked."
+          elif [ "$VISIBILITY" != public ]; then
+            echo "::error::The repository is $VISIBILITY, but the project was generated for a public one. Make it public, or keep it $VISIBILITY and run \`uvx copier update --defaults --vcs-ref=:current: --data visibility=private\` on a branch, as docs/maintaining.md says."
+            exit 1
+          fi
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: taiki-e/install-action@ab49d3c64680143e184118bed66a46419fc15519 # v2.90.5
+        with:
+          tool: just@1.59.0,cargo-deny@0.20.2,cargo-shear@1.14.0,typos@1.51.1,taplo@0.10.0,shellcheck@0.11.0,zizmor@1.31.1,lychee@0.24.2,cargo-about@0.9.3
+
+      - name: Install the pinned toolchains
+        run: just install-toolchains
+
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: 1.4.4
+
+      # install-action has no actionlint package; the runner image has Go.
+      - name: Install actionlint
+        run: |
+          go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.12
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+
+      - run: just fmt-check
+      - run: just typos
+      - run: just actionlint
+      - run: just zizmor
+      - run: just shear
+      - run: just deny
+      - run: just links
+      - run: just policy
+      - run: just notices
+      - run: just web-check
+      - run: just web-build
+
+  build:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Linux on x86-64
+            os: ubuntu-24.04
+            target: x86_64-unknown-linux-gnu
+          - name: Linux on ARM64
+            os: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-gnu
+    env:
+      NEXTEST_PROFILE: ci
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+
+      - uses: taiki-e/install-action@ab49d3c64680143e184118bed66a46419fc15519 # v2.90.5
+        with:
+          tool: just@1.59.0,cargo-nextest@0.9.150,cargo-dylint@6.4.0,dylint-link@6.4.0
+
+      # The custom lints run on every platform, so they also check platform-gated code.
+      - name: Install the pinned toolchains
+        shell: bash
+        env:
+          TARGET: ${{ matrix.target }}
+        run: |
+          just install-toolchains
+          rustup target add "$TARGET"
+
+      - run: just lint
+
+      # cargo-dylint builds the lint library under target/dylint/libraries, from its git checkout,
+      # and its driver under ~/.dylint_drivers. rust-cache keeps only what the project's own
+      # dependencies build, so without this both rebuild on every run. The key holds everything
+      # the two builds depend on: the runner's system, image name and processor, the lints'
+      # nightly, the cargo-dylint version, and the libraries entry with its pinned trellis commit.
+      # It has no restore-keys, so a change to any of them misses. Only the builds are cached: the
+      # lint results for the project's own crates, under target/dylint/target, are not, so every
+      # run lints them again.
+      - name: Compute the lint build's cache key
+        id: dylint-key
+        shell: bash
+        run: |
+          lints_nightly=$(just --evaluate lints_nightly)
+          dylint_version=$(cargo dylint --version)
+          libraries=$(cargo metadata --locked --no-deps --format-version 1 | jq --compact-output '.metadata.dylint.libraries')
+          libraries_hash=$(sha256sum <<< "$libraries" | cut -c1-16)
+          echo "key=dylint-$RUNNER_OS-$ImageOS-$RUNNER_ARCH-$lints_nightly-${dylint_version##* }-$libraries_hash" >> "$GITHUB_OUTPUT"
+
+      - name: Restore the lint library and driver
+        id: dylint-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          key: ${{ steps.dylint-key.outputs.key }}
+          path: |
+            target/dylint/libraries
+            ~/.dylint_drivers
+            ~/.cargo/git/checkouts/trellis-*
+
+      - run: just dylint
+
+      # Saved only from main, like rust-cache, and only after `just dylint` passed.
+      - name: Save the lint library and driver
+        if: github.ref == 'refs/heads/main' && steps.dylint-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          key: ${{ steps.dylint-key.outputs.key }}
+          path: |
+            target/dylint/libraries
+            ~/.dylint_drivers
+            ~/.cargo/git/checkouts/trellis-*
+
+      # The tests and the release build use the target a release ships. The lints don't: the
+      # library cargo-dylint loads can't be built for musl, and code can't branch on what differs
+      # between the target and the runner's own.
+      - name: Test
+        env:
+          CARGO_BUILD_TARGET: ${{ matrix.target }}
+        run: just test
+
+      - run: just docs
+
+      - name: Build the release binaries
+        env:
+          CARGO_BUILD_TARGET: ${{ matrix.target }}
+        run: just build-release
+
+      - name: Upload the test results
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: test-results-${{ matrix.name }}
+          path: target/nextest/ci/junit.xml
+          if-no-files-found: ignore
+
+  image:
+    name: Container image
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: taiki-e/install-action@ab49d3c64680143e184118bed66a46419fc15519 # v2.90.5
+        with:
+          tool: just@1.59.0,cargo-about@0.9.3
+
+      - name: Install the pinned toolchain
+        run: rustup toolchain install
+
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: 1.4.4
+
+      - name: Write the license notices the image carries
+        run: just notices
+
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      # The release builds every architecture's image on this runner, cross-compiling the others.
+      # `image-run` starts each one on its own architecture.
+      - name: Build the image for each architecture
+        run: |
+          docker buildx build --file Containerfile --platform linux/amd64 \
+            --tag spareline:ci --output type=docker,dest=image-x86_64.tar .
+          docker buildx build --file Containerfile --platform linux/arm64 \
+            --tag spareline:ci --output type=docker,dest=image-aarch64.tar .
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: images
+          path: image-*.tar
+          retention-days: 1
+          if-no-files-found: error
+
+  image-run:
+    name: Run the image (${{ matrix.name }})
+    needs: image
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Linux on x86-64
+            os: ubuntu-24.04
+            arch: x86_64
+          - name: Linux on ARM64
+            os: ubuntu-24.04-arm
+            arch: aarch64
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: images
+
+      - name: Run the image
+        env:
+          ARCH: ${{ matrix.arch }}
+        run: |
+          docker load --input "image-$ARCH.tar"
+          docker run --rm spareline:ci --version
+
+  # Branch protection requires this job instead of each job by name, so `needs` lists every other
+  # job, and a new job goes there rather than into branch protection. It runs with
+  # `always()` because a job whose needs fail is skipped, and GitHub counts a skipped required
+  # check as passing.
+  passed:
+    name: CI passed
+    needs: [quick, build, image, image-run]
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions: {}
+    steps:
+      - name: Check every job passed
+        env:
+          NEEDS: ${{ toJSON(needs) }}
+        run: |
+          failed=$(jq --raw-output 'to_entries[] | select(.value.result != "success") | "::error::\(.key) ended with \(.value.result)."' <<< "$NEEDS")
+          if [ -n "$failed" ]; then
+            echo "$failed"
+            exit 1
+          fi
