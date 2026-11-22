@@ -11,7 +11,7 @@ use rusqlite::{Connection, OpenFlags};
 use serde::Serialize;
 use thiserror::Error;
 
-use crate::{node_message, resolve};
+use crate::resolve;
 
 /// A finished backup. Its [`Display`] is the line spareline-old printed on success:
 /// `snapshot saved to <absolute destination>`.
@@ -74,22 +74,25 @@ pub enum BackupError {
     /// `PRAGMA integrity_check` didn't answer with exactly one `ok` row.
     #[error("integrity_check failed for {path}: {rows}")]
     IntegrityFailed {
-        /// The checked file, as it was given.
+        /// The absolute path of the checked file.
         path: String,
         /// The rows it answered, as JSON: `[{"integrity_check":"..."}]`.
         rows: String,
     },
-    /// A file system call failed. The message is in Node.js's form, such as
-    /// `ENOENT: no such file or directory, stat '/app/data/spareline.db'`.
+    /// A file system call failed. The message names the step and the path, as the live build
+    /// words it, such as `cannot read backup source /app/data/spareline.db: No such file or
+    /// directory (os error 2)`.
     #[error("{message}")]
     FileSystem {
         /// The message.
         message: String,
     },
-    /// SQLite failed, with its message, such as `unable to open database file`.
-    #[error("{message}")]
+    /// SQLite failed on a file.
+    #[error("SQLite failed on {path}: {message}")]
     Sqlite {
-        /// The message.
+        /// The absolute path of the file.
+        path: String,
+        /// SQLite's message as rusqlite words it, such as `file is not a database`.
         message: String,
     },
 }
@@ -112,8 +115,12 @@ pub enum BackupError {
 pub fn backup(source: &Path, destination: &Path) -> Result<BackupSaved, BackupError> {
     let source_path = absolute(source)?;
     let destination_path = absolute(destination)?;
-    let metadata =
-        fs::metadata(&source_path).map_err(|error| file_system(&error, "stat", &source_path))?;
+    let metadata = fs::metadata(&source_path).map_err(|error| BackupError::FileSystem {
+        message: format!(
+            "cannot read backup source {}: {error}",
+            source_path.display()
+        ),
+    })?;
     if !metadata.is_file() {
         return Err(BackupError::SourceNotFile {
             path: source_path.display().to_string(),
@@ -126,7 +133,14 @@ pub fn backup(source: &Path, destination: &Path) -> Result<BackupSaved, BackupEr
             });
         }
         Err(error) if is_missing(&error) => {}
-        Err(error) => return Err(file_system(&error, "lstat", &destination_path)),
+        Err(error) => {
+            return Err(BackupError::FileSystem {
+                message: format!(
+                    "cannot read backup destination {}: {error}",
+                    destination_path.display()
+                ),
+            });
+        }
     }
     let directory = destination_path
         .parent()
@@ -137,9 +151,9 @@ pub fn backup(source: &Path, destination: &Path) -> Result<BackupSaved, BackupEr
     let work = make_temporary_directory(&directory, &format!(".{name}-"))?;
     let result = copy_and_publish(&source_path, &work, &destination_path, &directory);
     let removed = match fs::remove_dir_all(&work) {
-        Err(error) if error.kind() != io::ErrorKind::NotFound => {
-            Err(file_system(&error, "rm", &work))
-        }
+        Err(error) if error.kind() != io::ErrorKind::NotFound => Err(BackupError::FileSystem {
+            message: format!("cannot remove {}: {error}", work.display()),
+        }),
         _ => Ok(()),
     };
     result?;
@@ -150,16 +164,15 @@ pub fn backup(source: &Path, destination: &Path) -> Result<BackupSaved, BackupEr
 }
 
 /// Checks `file` with `PRAGMA integrity_check`, which must answer with exactly one row, `ok`.
-/// The file is opened read-only, as given; the result names its absolute path.
+/// The file is opened read-only by its absolute path, which the result and any failure name.
 ///
 /// # Errors
 ///
 /// Fails when SQLite can't open or read the file, or the check finds a problem.
 pub fn check(file: &Path) -> Result<IntegrityOk, BackupError> {
-    check_integrity(file)?;
-    Ok(IntegrityOk {
-        file: absolute(file)?,
-    })
+    let file = absolute(file)?;
+    check_integrity(&file)?;
+    Ok(IntegrityOk { file })
 }
 
 /// The body of [`backup`] after the temporary directory exists.
@@ -187,18 +200,22 @@ fn copy_and_publish(
     check_integrity(&temporary)?;
     sync(&temporary, File::options().read(true).write(true))?;
     fs::hard_link(&temporary, destination).map_err(|error| BackupError::FileSystem {
-        message: node_message::node_link_message(&error, &temporary, destination),
+        message: format!(
+            "cannot publish the backup at {}: {error}",
+            destination.display()
+        ),
     })?;
     sync(directory, File::options().read(true))
 }
 
 /// Opens `path` with `options` and syncs it to disk.
 fn sync(path: &Path, options: &OpenOptions) -> Result<(), BackupError> {
-    let file = options
+    options
         .open(path)
-        .map_err(|error| file_system(&error, "open", path))?;
-    file.sync_all()
-        .map_err(|error| file_system(&error, "fsync", path))
+        .and_then(|file| file.sync_all())
+        .map_err(|error| BackupError::FileSystem {
+            message: format!("cannot sync {}: {error}", path.display()),
+        })
 }
 
 /// One row of `PRAGMA integrity_check`, as spareline-old's error message shows it.
@@ -236,10 +253,9 @@ fn check_integrity(path: &Path) -> Result<(), BackupError> {
 }
 
 /// Creates a new directory named `prefix` followed by six random letters and digits in
-/// `directory`, readable only by its owner, as Node's `mkdtemp` does.
+/// `directory`, readable only by its owner.
 fn make_temporary_directory(directory: &Path, prefix: &str) -> Result<PathBuf, BackupError> {
     const LETTERS: &[u8; 62] = b"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
-    let template = directory.join(format!("{prefix}XXXXXX"));
     let mut builder = DirBuilder::new();
     restrict_to_owner(&mut builder);
     for _ in 0..100 {
@@ -259,13 +275,21 @@ fn make_temporary_directory(directory: &Path, prefix: &str) -> Result<PathBuf, B
         match builder.create(&candidate) {
             Ok(()) => return Ok(candidate),
             Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {}
-            Err(error) => return Err(file_system(&error, "mkdtemp", &template)),
+            Err(error) => {
+                return Err(BackupError::FileSystem {
+                    message: format!(
+                        "cannot write the backup at {}: {error} at path \"{}\"",
+                        directory.display(),
+                        candidate.display()
+                    ),
+                });
+            }
         }
     }
     Err(BackupError::FileSystem {
         message: format!(
-            "EEXIST: file already exists, mkdtemp '{}'",
-            template.display()
+            "cannot write the backup at {}: every temporary name tried exists",
+            directory.display()
         ),
     })
 }
@@ -276,9 +300,11 @@ fn restrict_to_owner(builder: &mut DirBuilder) {
     builder.mode(0o700);
 }
 
-/// `path` made absolute, as Node's `path.resolve` does.
+/// `path` made absolute against the working directory, with `.` and `..` resolved.
 fn absolute(path: &Path) -> Result<PathBuf, BackupError> {
-    resolve::resolve(path).map_err(|error| file_system(&error, "uv_cwd", path))
+    resolve::resolve(path).map_err(|error| BackupError::FileSystem {
+        message: format!("cannot resolve {}: {error}", path.display()),
+    })
 }
 
 /// Whether a failed `lstat` means nothing is there. Only a missing entry counts: a parent that is
@@ -287,25 +313,12 @@ fn is_missing(error: &io::Error) -> bool {
     error.kind() == io::ErrorKind::NotFound
 }
 
-fn file_system(error: &io::Error, syscall: &str, path: &Path) -> BackupError {
-    BackupError::FileSystem {
-        message: node_message::node_message(error, syscall, path),
-    }
-}
-
-/// SQLite's own message for `error`, without the path rusqlite adds to a failed open, as Bun
-/// reports it.
+/// A SQLite failure on the file at the absolute `path`, as the live build words it.
 fn sqlite(error: &rusqlite::Error, path: &Path) -> BackupError {
-    let message = if let rusqlite::Error::SqliteFailure(_, Some(message)) = error {
-        let suffix = format!(": {}", path.display());
-        message
-            .strip_suffix(&suffix)
-            .unwrap_or(message.as_str())
-            .to_owned()
-    } else {
-        error.to_string()
-    };
-    BackupError::Sqlite { message }
+    BackupError::Sqlite {
+        path: path.display().to_string(),
+        message: error.to_string(),
+    }
 }
 
 #[cfg(test)]
@@ -399,7 +412,7 @@ mod tests {
     }
 
     #[test]
-    fn a_missing_source_or_directory_fails_with_nodes_message() {
+    fn a_missing_source_or_directory_fails_as_the_live_build_words_it() {
         let dir = TestDir::new();
         let missing = dir.path().join("nothing.db");
         assert_eq!(
@@ -407,7 +420,7 @@ mod tests {
                 .unwrap_err()
                 .to_string(),
             format!(
-                "ENOENT: no such file or directory, stat '{}'",
+                "cannot read backup source {}: No such file or directory (os error 2)",
                 missing.display()
             )
         );
@@ -421,14 +434,18 @@ mod tests {
         let _live = database_with_a_note(&path, "x");
         let nowhere = dir.path().join("no-such-dir").join("x.db");
         let message = backup(&path, &nowhere).unwrap_err().to_string();
+        let parent = nowhere.parent().unwrap().display().to_string();
         assert!(
-            message.starts_with("ENOENT: no such file or directory, mkdtemp '"),
+            message.starts_with(&format!(
+                "cannot write the backup at {parent}: No such file or directory (os error 2) at \
+                 path \"{parent}/.x.db-"
+            )),
             "{message}"
         );
     }
 
     #[test]
-    fn a_destination_under_a_file_fails_as_nodes_lstat_did() {
+    fn a_destination_under_a_file_names_the_destination() {
         let dir = TestDir::new();
         let path = dir.path().join("spareline.db");
         let _live = database_with_a_note(&path, "x");
@@ -437,7 +454,10 @@ mod tests {
         let under = file.join("x.db");
         assert_eq!(
             backup(&path, &under).unwrap_err().to_string(),
-            format!("ENOTDIR: not a directory, lstat '{}'", under.display())
+            format!(
+                "cannot read backup destination {}: Not a directory (os error 20)",
+                under.display()
+            )
         );
     }
 
@@ -462,8 +482,21 @@ mod tests {
         let junk = dir.path().join("junk.db");
         fs::write(&junk, b"this is not a database file, just some bytes to make it long enough to have a header page").unwrap();
         let error = check(&junk).unwrap_err();
-        assert_eq!(error.to_string(), "file is not a database");
-        let missing = check(&dir.path().join("missing.db")).unwrap_err();
-        assert_eq!(missing.to_string(), "unable to open database file");
+        assert_eq!(
+            error.to_string(),
+            format!(
+                "SQLite failed on {}: file is not a database",
+                junk.display()
+            )
+        );
+        let missing_path = dir.path().join("missing.db");
+        let missing = check(&missing_path).unwrap_err();
+        assert_eq!(
+            missing.to_string(),
+            format!(
+                "SQLite failed on {0}: unable to open database file: {0}",
+                missing_path.display()
+            )
+        );
     }
 }

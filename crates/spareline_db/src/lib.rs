@@ -28,7 +28,6 @@ mod js_text;
 mod message;
 mod message_store;
 mod migration;
-mod node_message;
 mod number_record;
 mod number_summary;
 mod password_hash;

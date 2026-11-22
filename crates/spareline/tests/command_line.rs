@@ -233,9 +233,12 @@ fn backup_copies_a_database_and_checks_the_copy() {
     let missing_text = missing.to_str().expect("UTF-8 path");
     let unreadable = run_in(&data, &["backup", missing_text, copy_text]);
     assert_eq!(unreadable.status.code(), Some(1), "{unreadable:?}");
-    assert!(
-        stderr(&unreadable).contains(missing_text),
-        "the failure names the source: {unreadable:?}"
+    assert_eq!(
+        stderr(&unreadable),
+        format!(
+            "cannot read backup source {missing_text}: No such file or directory (os error 2)\n"
+        ),
+        "the live build words it so"
     );
 }
 
