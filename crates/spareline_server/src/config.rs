@@ -204,6 +204,40 @@ impl Config {
     pub fn database_path(&self) -> PathBuf {
         self.data_dir.join("spareline.db")
     }
+
+    /// Reads only `DATA_DIR`, `data` when unset, as the `users` and `keys` commands do: they
+    /// run beside the service and ignore its other settings.
+    #[must_use]
+    pub fn data_dir_from_env<F: Fn(&str) -> Option<OsString>>(lookup: F) -> PathBuf {
+        lookup("DATA_DIR").map_or_else(|| PathBuf::from("data"), PathBuf::from)
+    }
+
+    /// Reads only `ADB_SERVER`, `127.0.0.1:5037` when unset, as `policy-check` does.
+    ///
+    /// # Errors
+    ///
+    /// Returns the invalid variable.
+    pub fn adb_server_from_env<F: Fn(&str) -> Option<OsString>>(
+        lookup: F,
+    ) -> Result<Endpoint, EnvError> {
+        let mut reader = Reader {
+            lookup,
+            issues: Issues::default(),
+        };
+        let raw = reader
+            .text("ADB_SERVER")
+            .unwrap_or_else(|| "127.0.0.1:5037".to_owned());
+        let parsed: Result<Endpoint, EndpointError> = raw.parse();
+        match parsed {
+            Ok(endpoint) => reader.issues.finish(endpoint),
+            Err(error) => {
+                reader.issues.add("ADB_SERVER", error.to_string());
+                Err(EnvError {
+                    issues: reader.issues.issues,
+                })
+            }
+        }
+    }
 }
 
 /// What `spareline smoke` reads: the service's settings and `SMOKE_MIN_PHONES`.
@@ -387,5 +421,34 @@ mod tests {
     fn an_empty_spareline_web_dir_falls_back_to_web_dir() {
         let config = read(&[["SPARELINE_WEB_DIR", ""], ["WEB_DIR", "/web"]]).unwrap();
         assert_eq!(config.web_dir, PathBuf::from("/web"));
+    }
+
+    #[test]
+    fn the_account_commands_read_only_data_dir() {
+        let lookup = |name: &str| (name == "DATA_DIR").then(|| OsString::from("/srv/data"));
+        assert_eq!(
+            Config::data_dir_from_env(lookup),
+            PathBuf::from("/srv/data")
+        );
+        assert_eq!(Config::data_dir_from_env(|_| None), PathBuf::from("data"));
+    }
+
+    #[test]
+    fn policy_check_reads_only_adb_server() {
+        let unset = Config::adb_server_from_env(|_| None).unwrap();
+        assert_eq!(unset, Endpoint::new("127.0.0.1".to_owned(), 5037));
+        let set = |value: &'static str| {
+            move |name: &str| (name == "ADB_SERVER").then(|| OsString::from(value))
+        };
+        assert_eq!(
+            Config::adb_server_from_env(set("10.0.0.2:5038")).unwrap(),
+            Endpoint::new("10.0.0.2".to_owned(), 5038)
+        );
+        assert_eq!(
+            Config::adb_server_from_env(set("nope"))
+                .unwrap_err()
+                .to_string(),
+            "invalid environment:\n  ADB_SERVER: expected host:port for the adb server, got \"nope\""
+        );
     }
 }

@@ -16,6 +16,7 @@ path = "src/main.rs"
 clap = { workspace = true, features = ["std", "help", "usage", "error-context"] }
 spareline_adb = { path = "../spareline_adb" }
 spareline_core = { path = "../spareline_core" }
+spareline_db = { path = "../spareline_db" }
 spareline_server = { path = "../spareline_server" }
 tokio = { workspace = true, features = ["rt-multi-thread", "net", "time", "io-util"] }
 

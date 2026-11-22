@@ -14,6 +14,7 @@ serde.workspace = true
 serde_json.workspace = true
 spareline_adb = { path = "../spareline_adb" }
 spareline_core = { path = "../spareline_core" }
+spareline_db = { path = "../spareline_db" }
 thiserror.workspace = true
 tokio = { workspace = true, features = ["fs", "io-util", "net", "rt", "sync", "time"] }
 
