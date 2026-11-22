@@ -4,6 +4,7 @@
 mod android;
 mod identifiers;
 mod monitor;
+mod phone_status;
 mod probe;
 mod sms;
 mod text;
@@ -24,6 +25,7 @@ pub use monitor::{
     SimSignal, SimStatePoll, SimUsage, UidBytes, diff_slots, internet_usage, parse_netstats,
     slot_map,
 };
+pub use phone_status::{PhoneStatus, phone_status};
 pub use probe::{
     IDENTITY_INTERVAL, IDENTITY_RETRY_DELAYS, IdentityProbe, PROBE_TIMEOUT, PhoneHealth,
     PhoneIdentity, ProbeError, SimIdentity, SlotPresence, SlotState, check_probe_exit,
