@@ -126,6 +126,12 @@ pub(crate) fn word_boundary_before(text: &str, index: usize) -> bool {
         .is_none_or(|c| !is_word(c))
 }
 
+/// Whether `\b` holds at `index` after a word character: the text ends there, or the character
+/// there isn't a word character.
+pub(crate) fn word_boundary_after(text: &str, index: usize) -> bool {
+    text[index..].chars().next().is_none_or(|c| !is_word(c))
+}
+
 /// The run that starts `text` of characters other than white space, as `(\S+)` captures it.
 pub(crate) fn leading_non_space(text: &str) -> &str {
     let end = text.find(is_space).unwrap_or(text.len());

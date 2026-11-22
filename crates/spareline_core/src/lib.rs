@@ -4,6 +4,7 @@
 mod android;
 mod identifiers;
 mod probe;
+mod sms;
 mod text;
 mod timestamp;
 mod version_line;
@@ -20,6 +21,14 @@ pub use probe::{
     IDENTITY_INTERVAL, IDENTITY_RETRY_DELAYS, IdentityProbe, PROBE_TIMEOUT, PhoneHealth,
     PhoneIdentity, ProbeError, SimIdentity, SlotPresence, SlotState, check_probe_exit,
     health_command, identity_command, identity_due, parse_health, parse_identity,
+};
+pub use sms::{
+    ContentQueryError, ContentRow, ContentRows, HexError, INBOX_KEY_COLUMNS, ISMS_TRIGGER_COMMAND,
+    InboxKey, IsmsActivity, MMS_ADDR_COLUMNS, MMS_COLUMNS, MMS_PART_COLUMNS, MmsPart,
+    MmsPartSignature, MmsSignature, PartReadError, PartRef, Provider, ProviderMessage,
+    ProviderQuery, ProviderRowError, SMS_COLUMNS, check_content_output, check_part_read,
+    decode_hex, inbox_keys, mms_message, mms_part, mms_signature, parse_content_rows, parse_isms,
+    read_part_command, sms_message,
 };
 pub use timestamp::Timestamp;
 pub use version_line::version_line;
