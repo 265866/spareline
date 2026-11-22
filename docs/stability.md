@@ -26,3 +26,15 @@ Your scripts, links and the commands in [Install](install.md) and
 - The release workflow, `.github/workflows/release.yml`, and the `main` branch it runs on.
 - The repository, `265866/spareline`.
 - The image, `ghcr.io/265866/spareline`.
+
+## What stays compatible
+
+spareline replaces a Bun and TypeScript service in place, so these stay as that service left them:
+
+- The database: `DATA_DIR/spareline.db`, its schema and its three migrations, and the attachment
+  files under `DATA_DIR/attachments/`. A database either version wrote opens in the other.
+- The HTTP API under `/api/v1/`, its JSON shapes, status codes and error bodies, the session cookie
+  and the API key format.
+- The command-line commands the deploy kit and people run: `healthcheck`, `smoke`, `backup`,
+  `users` and `keys`.
+- The environment variables the service reads, with their defaults.
