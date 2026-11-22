@@ -7,7 +7,15 @@ architectures:
 author: Colton
 description: Spare phone lines on spare phones, with an inbox for each line.
 github_owner: '265866'
-image: {}
+image:
+    env:
+        DATA_DIR: /app/data
+        HOST: 0.0.0.0
+        PORT: '8740'
+    expose:
+    - 8740
+    files: true
+    workdir: /app
 kind: service
 license: MIT OR Apache-2.0
 project_name: spareline
