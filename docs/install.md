@@ -5,6 +5,7 @@ and how to update it.
 
 The image is `ghcr.io/265866/spareline`, for Linux on x86-64 and Linux on ARM64.
 Docker and Podman pull the one for your machine.
+
 Each release pushes three tags, such as these for 1.4.2:
 
 | Tag | Follows |
@@ -23,8 +24,8 @@ docker run -d --name spareline --restart unless-stopped \
 Replace `<minor>` with the latest release's minor version, such as `1.4`, so updates within it
 arrive when you pull.
 
-Podman takes the same arguments. Check the image first as
-[Verify a release](verifying-releases.md) shows.
+Podman takes the same arguments. Check the image first as [Verify a release](verifying-releases.md)
+shows.
 
 ## Update
 

@@ -32,7 +32,8 @@ gh attestation verify oci://ghcr.io/265866/spareline@sha256:<digest> \
   --source-ref refs/heads/main
 ```
 
-The release workflow runs both checks on the digest before it moves the minor and `latest` tags.
+The release workflow runs both checks on the digest before it tags the image with its version,
+minor and `latest`, so every tag names an image that passed them.
 
 ## Run the digest
 

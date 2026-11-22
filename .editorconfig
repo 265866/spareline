@@ -14,3 +14,7 @@ indent_size = 2
 # Markdown ends a line with two spaces to break it.
 [*.md]
 trim_trailing_whitespace = false
+
+# Bun writes bun.lock with two-space indents.
+[bun.lock]
+indent_size = 2

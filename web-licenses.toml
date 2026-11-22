@@ -1,0 +1,13 @@
+# Licenses accepted for one npm package each, beyond `accepted` in about.toml, which applies to
+# every package. `just notices` reads both for the web UI's packages. Accept a license here when
+# only one package needs it, such as a font under OFL-1.1, in a rules pull request before the code
+# pull request that adds the package; CONTRIBUTING.md says how. Each entry names the package
+# exactly as npm does, scope included, and covers every installed version of it:
+#
+# [[package]]
+# name = "@fontsource/inter"
+# licenses = ["OFL-1.1"]
+# reason = "A font the web UI ships; OFL-1.1 allows bundling it."
+#
+# `just stale-licenses`, which the weekly Advisories workflow runs, fails on an entry for a package
+# that isn't installed.

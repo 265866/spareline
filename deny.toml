@@ -15,6 +15,9 @@ ignore = []
 # Keep this list in step with `accepted` in about.toml, which writes the release's license notices.
 allow = ["Apache-2.0", "BSD-2-Clause", "BSD-3-Clause", "ISC", "MIT", "Unicode-3.0", "Zlib"]
 confidence-threshold = 0.9
+# The list names licenses ahead of the dependencies that use them, so one no dependency uses yet
+# isn't worth a warning. An exception no crate uses still warns.
+unused-allowed-license = "allow"
 
 [licenses.private]
 ignore = true
