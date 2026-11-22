@@ -279,7 +279,7 @@ impl HealthTracker {
                 slot.samples += 1;
                 slot.min_level = slot.min_level.min(radio.signal_level);
                 if let Some(dbm) = radio.signal_dbm {
-                    slot.dbm_sum += dbm;
+                    slot.dbm_sum = slot.dbm_sum.saturating_add(dbm);
                     slot.dbm_count += 1;
                 }
                 let spell = self
@@ -414,7 +414,7 @@ fn record_battery(
     at: Timestamp,
 ) {
     let temperature = battery.temperature_deci_c;
-    bucket.battery_sum += battery.level;
+    bucket.battery_sum = bucket.battery_sum.saturating_add(battery.level);
     bucket.battery_count += 1;
     bucket.temp_max = Some(
         bucket

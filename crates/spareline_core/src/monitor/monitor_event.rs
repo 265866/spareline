@@ -86,6 +86,7 @@ struct ThresholdDetail<'event> {
     slot: Option<u32>,
     rx: u64,
     tx: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
     threshold_bytes: Option<u64>,
     uids: &'event [UidBytes],
     data_off: bool,

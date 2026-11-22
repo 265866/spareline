@@ -183,8 +183,9 @@ impl Policy {
     }
 
     /// A drift check's batch: the auto-fix steps, data-off for `data_off_subs` (the SIMs over
-    /// the threshold, then the inserted ones), and on connect with radios off the next SIMs' data
-    /// keys. Safety first, in case the batch is cut short: the radio and data commands, the
+    /// the threshold, then the inserted ones) when the profile keeps radios off, and on connect
+    /// with radios off the next SIMs' data keys. Without `radiosOff` the profile asks for no
+    /// data-off, so none is planned, whatever the caller passes. Safety first, in case the batch is cut short: the radio and data commands, the
     /// data-off, the preset, then the rest (the log buffer).
     ///
     /// # Errors
@@ -198,7 +199,7 @@ impl Policy {
         data_off_subs: &[i64],
     ) -> Result<EnforceBatch, RefusedCommand> {
         let steps = rule_result::plan(snapshot, context, RuleSelection::AutoFix, &self.rules);
-        let extra = if data_off_subs.is_empty() {
+        let extra = if data_off_subs.is_empty() || self.radios_off.is_none() {
             Vec::new()
         } else {
             policy::data_off_commands(data_off_subs)

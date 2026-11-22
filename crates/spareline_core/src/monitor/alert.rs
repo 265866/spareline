@@ -204,7 +204,7 @@ impl Alert {
                 }
                 let name = sim.slot.map_or_else(
                     || format!("sub {}", sim.sub_id),
-                    |slot| (slot + 1).to_string(),
+                    |slot| (u64::from(slot) + 1).to_string(),
                 );
                 alerts.push(Self {
                     key: format!("data_threshold:{serial}:{}", sim.sub_id),

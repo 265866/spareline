@@ -723,7 +723,11 @@ fn mms_outcome(snapshot: &Snapshot) -> Outcome {
         .iter()
         .map(|sub| {
             let state = if sub.mms_with_data_off() { "on" } else { "off" };
-            format!("SIM {} (sub {}) {state}", sub.slot + 1, sub.sub_id)
+            format!(
+                "SIM {} (sub {}) {state}",
+                u64::from(sub.slot) + 1,
+                sub.sub_id
+            )
         })
         .collect();
     Outcome::new(

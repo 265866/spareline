@@ -346,7 +346,10 @@ impl Read {
 #[must_use]
 pub fn preset_data_off_commands(snapshot: &Snapshot) -> Vec<String> {
     let highest = snapshot.known_sub_ids.iter().copied().fold(0, i64::max);
-    (highest + 1..=highest + PRESET_SUB_IDS)
+    let Some(last) = highest.checked_add(PRESET_SUB_IDS) else {
+        return Vec::new();
+    };
+    (highest + 1..=last)
         .filter(|sub_id| {
             snapshot.setting(Namespace::Global, &format!("mobile_data{sub_id}")) != Some("0")
         })

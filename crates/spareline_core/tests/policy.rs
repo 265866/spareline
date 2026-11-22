@@ -7,8 +7,8 @@
 
 use regex::{Captures, Regex};
 use spareline_core::monitor::{
-    self, CheckContext, LOCK_SCREEN_DEX_PHONE_PATH, LOCK_SCREEN_DEX_SHA256, Namespace, PhoneFile,
-    PlanStep, Policy, Profile, RadiosOff, RuleResult, RuleSelection, Severity, Snapshot,
+    self, CheckContext, CheckReason, LOCK_SCREEN_DEX_PHONE_PATH, LOCK_SCREEN_DEX_SHA256, Namespace,
+    PhoneFile, PlanStep, Policy, Profile, RadiosOff, RuleResult, RuleSelection, Severity, Snapshot,
 };
 
 const RECORDED: &str = include_str!("fixtures/nuu-s6702x/policy-read.txt");
@@ -985,5 +985,50 @@ fn a_read_that_cannot_be_trusted_is_refused() {
             .unwrap_err()
             .to_string(),
         "policy read returned no global settings"
+    );
+}
+
+#[test]
+fn a_garbled_slot_index_is_shown_rather_than_aborting_the_check() {
+    let snapshot = variant(&[["simSlotIndex=0", "simSlotIndex=4294967295"]]);
+    let results = results(&snapshot, IDLE);
+    let mms = results
+        .iter()
+        .find(|result| result.id == "mms_with_data_off")
+        .expect("the B30 profile has the MMS rule");
+    assert!(
+        !mms.observed.contains("SIM 0 "),
+        "the slot reads as printed, not wrapped: {}",
+        mms.observed
+    );
+}
+
+#[test]
+fn a_garbled_subscription_id_presets_nothing_rather_than_aborting() {
+    let snapshot = variant_regex(&[[
+        r"(All subscriptions:\n)",
+        "${1}  [SubscriptionInfoInternal: id=99999999999999999999 iccId=890155500[****] simSlotIndex=-1 ]\n",
+    ]]);
+    assert_eq!(
+        monitor::preset_data_off_commands(&snapshot),
+        Vec::<String>::new()
+    );
+}
+
+#[test]
+fn without_radios_off_a_check_plans_no_data_off_whatever_it_is_given() {
+    let policy = Policy::load("/app/profiles/screen-only.json", r#"{"dataSaver":true}"#)
+        .expect("a profile without radiosOff loads");
+    let batch = policy
+        .drift_batch(&recorded(), IDLE, CheckReason::Sim, &[1])
+        .expect("nothing is refused");
+    let commands = batch
+        .apply
+        .map_or_else(Vec::new, |apply| apply.commands().to_vec());
+    assert!(
+        commands
+            .iter()
+            .all(|command| !command.contains("mobile_data")),
+        "no data-off without radiosOff: {commands:?}"
     );
 }
