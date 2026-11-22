@@ -17,6 +17,9 @@ need admin rights on the repository or the release token, so `just ci` leaves th
 | --- | --- |
 | `crates/spareline` | The service: `main.rs` starts it and wires the parts together. No logic that a test would want to call. `spareline --version` prints the version line and exits 0 without starting the service, since CI's `Container image` job runs the image that way. `tests/command_line.rs` runs the built binary and checks it. |
 | `crates/spareline_core` | The logic. A crate of its own keeps the binary's command-line and runtime dependencies out of it, lets `just docs` check the doc comments of both crates, and gives `internal_dependencies` its first edge: the binary depends on the logic, never the reverse. |
+| `crates/spareline_adb` | A client for the adb server's smart-socket protocol: device lists and tracking, shell commands, file pushes and streams to sockets on a phone. It knows nothing about spareline; every connection goes to the adb server, never to a phone directly. |
+| `crates/spareline_db` | The SQLite database: the migrations, which stay byte-compatible with the databases spareline-old and earlier builds wrote, and the stores for texts, inventory, health, accounts and sessions. |
+| `crates/spareline_server` | The running service: the HTTP API and its Server-Sent Events, sign-in, the phone manager that polls adb, text ingest, health monitoring and policy, and the screen sessions. |
 | `crates/spareline/web` | The web UI, a Bun app. trellis needs only its `check` and `build` scripts, and `build` to write the UI to `dist/`. The image puts that build in `/usr/share/spareline/web`, and `just run` builds it into `dist/`; both name the directory in `SPARELINE_WEB_DIR`, for the service to read when it serves the UI. |
 
 Add a row for each crate you add, in the same pull request as the rule change that allows it.
