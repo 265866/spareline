@@ -66,8 +66,11 @@ license = "MIT OR Apache-2.0"
 publish = false
 
 [workspace.dependencies]
+axum = { version = "0.8.9", default-features = false }
 clap = { version = "4.6.9", default-features = false }
+serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"
+sha2 = "0.11.1"
 thiserror = "2.0.21"
 tokio = "1.54.1"
 
