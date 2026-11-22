@@ -211,12 +211,16 @@ fn snapshot(
 #[cfg(test)]
 mod tests {
     use std::cell::Cell;
+    use std::sync::Mutex;
+    use std::thread;
 
     use rusqlite::types::FromSql;
     use serde::Deserialize;
 
     use super::*;
+    use crate::account_error::AccountError;
     use crate::migration::MigrationFile;
+    use crate::passwords::Passwords;
     use crate::test_clock;
     use crate::test_dir::TestDir;
 
@@ -561,6 +565,28 @@ mod tests {
             .query_row("SELECT count(*) FROM _migrations", [], |row| row.get(0))
             .unwrap();
         assert_eq!(ids, 1);
+    }
+
+    #[test]
+    fn a_database_behind_a_mutex_serves_other_threads() {
+        let shared = Mutex::new(Database::open_in_memory(test_clock::fixed).unwrap());
+        let passwords = Passwords::new();
+        let has_users = thread::scope(|scope| {
+            scope
+                .spawn(|| {
+                    assert!(
+                        matches!(
+                            passwords.hash_new("short"),
+                            Err(AccountError::PasswordTooShort)
+                        ),
+                        "a shared Passwords checks lengths on any thread"
+                    );
+                    shared.lock().unwrap().accounts().has_users().unwrap()
+                })
+                .join()
+                .unwrap()
+        });
+        assert!(!has_users);
     }
 
     #[test]
