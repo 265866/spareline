@@ -16,6 +16,7 @@ docker run --rm ghcr.io/265866/spareline:latest
 ## Documentation
 
 - [Install](docs/install.md): every way to install and update it.
+- [Run with Podman](deploy/podman/README.md): install, update and back up the phones' host.
 - [Verify a release](docs/verifying-releases.md): check that a download came from this repository.
 - [Design](docs/design.md): the goals, the architecture, and the decisions behind them.
 - [Stability](docs/stability.md): what a release can change, and what to read before you upgrade.

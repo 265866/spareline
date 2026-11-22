@@ -1,0 +1,10 @@
+[Unit]
+Description=Daily spareline backup
+
+[Timer]
+OnCalendar=*-*-* 03:30:00
+Persistent=true
+Unit=spareline-backup.service
+
+[Install]
+WantedBy=timers.target
