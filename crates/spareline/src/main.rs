@@ -12,7 +12,10 @@ use spareline_core::Timestamp;
 use spareline_db::{AccountError, AppliedMigration, Database, KeyScope};
 use spareline_server::healthcheck::Healthcheck;
 use spareline_server::smoke::Smoke;
-use spareline_server::{CommandOutcome, Config, KeysCommand, SmokeSettings, UsersCommand};
+use spareline_server::{
+    Clock, CommandOutcome, Config, EventLog, KeysCommand, Service, SmokeSettings, StopSignal,
+    UsersCommand,
+};
 use tokio::runtime::{Builder, Runtime};
 
 /// The command line, built with clap's builder API as `docs/style.md` asks.
@@ -304,7 +307,7 @@ fn main() -> io::Result<ExitCode> {
             &serial,
             &profile,
         ),
-        Invocation::Service => run_service(),
+        Invocation::Service => run_service(&Builder::new_multi_thread().enable_all().build()?),
     }
 }
 
@@ -447,8 +450,29 @@ fn run_policy_check(runtime: &Runtime, serial: &str, profile: &str) -> io::Resul
     }
 }
 
-/// Runs the service, which so far only prints its version line.
-fn run_service() -> io::Result<ExitCode> {
-    writeln!(io::stdout().lock(), "{}", spareline_core::version_line())?;
-    Ok(ExitCode::SUCCESS)
+/// Runs the service until SIGTERM or SIGINT. Invalid settings, an invalid policy profile, a
+/// database that can't be opened or a port that can't be bound print the reason on stderr and
+/// exit 1, as spareline-old did.
+fn run_service(runtime: &Runtime) -> io::Result<ExitCode> {
+    let config = match Config::from_env(environment) {
+        Ok(config) => config,
+        Err(error) => {
+            writeln!(io::stderr().lock(), "{error}")?;
+            return Ok(ExitCode::FAILURE);
+        }
+    };
+    let line = spareline_core::version_line();
+    let version = line.rsplit(' ').next().unwrap_or(&line).to_owned();
+    let log = EventLog::stderr(Clock::system());
+    let outcome = runtime.block_on(async move {
+        let service = Service::start(config, version, log).await?;
+        service.serve(StopSignal::wait()).await
+    });
+    match outcome {
+        Ok(()) => Ok(ExitCode::SUCCESS),
+        Err(error) => {
+            writeln!(io::stderr().lock(), "{error}")?;
+            Ok(ExitCode::FAILURE)
+        }
+    }
 }

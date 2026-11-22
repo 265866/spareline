@@ -1,0 +1,1555 @@
+[
+ {
+  "name": "bad-utf8-path",
+  "method": "GET",
+  "path": "/api/v1/phones/%FF",
+  "headers": [],
+  "signedIn": true,
+  "body": null,
+  "status": "400",
+  "response": "{\"error\":\"Invalid URL: Invalid UTF-8 in `serial`\"}"
+ },
+ {
+  "name": "bad-utf8-sim",
+  "method": "GET",
+  "path": "/api/v1/sims/%FF",
+  "headers": [],
+  "signedIn": true,
+  "body": null,
+  "status": "400",
+  "response": "{\"error\":\"Invalid URL: Invalid UTF-8 in `key`\"}"
+ },
+ {
+  "name": "bad-utf8-key",
+  "method": "DELETE",
+  "path": "/api/v1/api-keys/%FF",
+  "headers": [],
+  "signedIn": true,
+  "body": null,
+  "status": "400",
+  "response": "{\"error\":\"Invalid URL: Invalid UTF-8 in `id`\"}"
+ },
+ {
+  "name": "big-body",
+  "method": "PATCH",
+  "path": "/api/v1/phones/NOPE",
+  "headers": [
+   "Content-Type: application/json"
+  ],
+  "signedIn": true,
+  "body": "<a JSON object with a 3 MiB string>",
+  "status": "413",
+  "response": "{\"error\":\"Failed to buffer the request body: length limit exceeded\"}"
+ },
+ {
+  "name": "huge-cents",
+  "method": "PATCH",
+  "path": "/api/v1/phones/NOPE",
+  "headers": [
+   "Content-Type: application/json"
+  ],
+  "signedIn": true,
+  "body": "{\"costCents\":9007199254740993}",
+  "status": "422",
+  "response": "{\"error\":\"costCents: expected a whole number of cents from 0 to 9007199254740991, got 9007199254740993 at line 1 column 30\"}"
+ },
+ {
+  "name": "bad-json",
+  "method": "PATCH",
+  "path": "/api/v1/phones/NOPE",
+  "headers": [
+   "Content-Type: application/json"
+  ],
+  "signedIn": true,
+  "body": "{",
+  "status": "400",
+  "response": "{\"error\":\"?: EOF while parsing an object at line 1 column 1\"}"
+ },
+ {
+  "name": "limit-huge",
+  "method": "GET",
+  "path": "/api/v1/messages?limit=99999999999999999999",
+  "headers": [],
+  "signedIn": true,
+  "body": null,
+  "status": "422",
+  "response": "{\"error\":\"limit: expected an integer from 1 to 500, got \\\"99999999999999999999\\\"\"}"
+ },
+ {
+  "name": "limit-repeat",
+  "method": "GET",
+  "path": "/api/v1/messages?limit=1&limit=2",
+  "headers": [],
+  "signedIn": true,
+  "body": null,
+  "status": "200"
+ },
+ {
+  "name": "head-phones",
+  "method": "HEAD",
+  "path": "/api/v1/phones",
+  "headers": [],
+  "signedIn": true,
+  "body": null,
+  "status": "200"
+ },
+ {
+  "name": "phone-empty",
+  "method": "PATCH",
+  "path": "/api/v1/phones/{serial}",
+  "headers": [
+   "Content-Type: application/json"
+  ],
+  "signedIn": true,
+  "body": "{}",
+  "status": "200"
+ },
+ {
+  "name": "phone-not-json",
+  "method": "PATCH",
+  "path": "/api/v1/phones/{serial}",
+  "headers": [
+   "Content-Type: application/json"
+  ],
+  "signedIn": true,
+  "body": "{",
+  "status": "400",
+  "response": "{\"error\":\"?: EOF while parsing an object at line 1 column 1\"}"
+ },
+ {
+  "name": "phone-array",
+  "method": "PATCH",
+  "path": "/api/v1/phones/{serial}",
+  "headers": [
+   "Content-Type: application/json"
+  ],
+  "signedIn": true,
+  "body": "[]",
+  "status": "200"
+ },
+ {
+  "name": "phone-null",
+  "method": "PATCH",
+  "path": "/api/v1/phones/{serial}",
+  "headers": [
+   "Content-Type: application/json"
+  ],
+  "signedIn": true,
+  "body": "null",
+  "status": "422",
+  "response": "{\"error\":\"invalid type: null, expected struct PhonePatchBody at line 1 column 4\"}"
+ },
+ {
+  "name": "phone-string",
+  "method": "PATCH",
+  "path": "/api/v1/phones/{serial}",
+  "headers": [
+   "Content-Type: application/json"
+  ],
+  "signedIn": true,
+  "body": "\"x\"",
+  "status": "422",
+  "response": "{\"error\":\"invalid type: string \\\"x\\\", expected struct PhonePatchBody at line 1 column 3\"}"
+ },
+ {
+  "name": "phone-unknown-field",
+  "method": "PATCH",
+  "path": "/api/v1/phones/{serial}",
+  "headers": [
+   "Content-Type: application/json"
+  ],
+  "signedIn": true,
+  "body": "{\"nope\":1}",
+  "status": "422",
+  "response": "{\"error\":\"nope: unknown field `nope`, expected one of `location`, `hubPort`, `costCents`, `acquiredOn` at line 1 column 7\"}"
+ },
+ {
+  "name": "phone-cents-negative",
+  "method": "PATCH",
+  "path": "/api/v1/phones/{serial}",
+  "headers": [
+   "Content-Type: application/json"
+  ],
+  "signedIn": true,
+  "body": "{\"costCents\":-1}",
+  "status": "422",
+  "response": "{\"error\":\"costCents: expected a whole number of cents from 0 to 9007199254740991, got -1 at line 1 column 16\"}"
+ },
+ {
+  "name": "phone-cents-fraction",
+  "method": "PATCH",
+  "path": "/api/v1/phones/{serial}",
+  "headers": [
+   "Content-Type: application/json"
+  ],
+  "signedIn": true,
+  "body": "{\"costCents\":1.5}",
+  "status": "422",
+  "response": "{\"error\":\"costCents: expected a whole number of cents from 0 to 9007199254740991, got 1.5 at line 1 column 17\"}"
+ },
+ {
+  "name": "phone-cents-string",
+  "method": "PATCH",
+  "path": "/api/v1/phones/{serial}",
+  "headers": [
+   "Content-Type: application/json"
+  ],
+  "signedIn": true,
+  "body": "{\"costCents\":\"5\"}",
+  "status": "422",
+  "response": "{\"error\":\"costCents: invalid type: string \\\"5\\\", expected a JSON number at line 1 column 16\"}"
+ },
+ {
+  "name": "phone-cents-too-big",
+  "method": "PATCH",
+  "path": "/api/v1/phones/{serial}",
+  "headers": [
+   "Content-Type: application/json"
+  ],
+  "signedIn": true,
+  "body": "{\"costCents\":9007199254740992}",
+  "status": "422",
+  "response": "{\"error\":\"costCents: expected a whole number of cents from 0 to 9007199254740991, got 9007199254740992 at line 1 column 30\"}"
+ },
+ {
+  "name": "phone-location-long",
+  "method": "PATCH",
+  "path": "/api/v1/phones/{serial}",
+  "headers": [
+   "Content-Type: application/json"
+  ],
+  "signedIn": true,
+  "body": "{\"location\": \"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\"}",
+  "status": "422",
+  "response": "{\"error\":\"location: expected a string of at most 64 characters, got 65 at line 1 column 81\"}"
+ },
+ {
+  "name": "phone-location-number",
+  "method": "PATCH",
+  "path": "/api/v1/phones/{serial}",
+  "headers": [
+   "Content-Type: application/json"
+  ],
+  "signedIn": true,
+  "body": "{\"location\":5}",
+  "status": "422",
+  "response": "{\"error\":\"location: invalid type: integer `5`, expected a string at line 1 column 13\"}"
+ },
+ {
+  "name": "phone-acquired-bad",
+  "method": "PATCH",
+  "path": "/api/v1/phones/{serial}",
+  "headers": [
+   "Content-Type: application/json"
+  ],
+  "signedIn": true,
+  "body": "{\"acquiredOn\":\"2026-02-30\"}",
+  "status": "422",
+  "response": "{\"error\":\"acquiredOn: expected a date written YYYY-MM-DD, got \\\"2026-02-30\\\" at line 1 column 27\"}"
+ },
+ {
+  "name": "phone-acquired-format",
+  "method": "PATCH",
+  "path": "/api/v1/phones/{serial}",
+  "headers": [
+   "Content-Type: application/json"
+  ],
+  "signedIn": true,
+  "body": "{\"acquiredOn\":\"x\"}",
+  "status": "422",
+  "response": "{\"error\":\"acquiredOn: expected a date written YYYY-MM-DD, got \\\"x\\\" at line 1 column 18\"}"
+ },
+ {
+  "name": "phone-two-errors",
+  "method": "PATCH",
+  "path": "/api/v1/phones/{serial}",
+  "headers": [
+   "Content-Type: application/json"
+  ],
+  "signedIn": true,
+  "body": "{\"costCents\":-1,\"location\":5}",
+  "status": "422",
+  "response": "{\"error\":\"costCents: expected a whole number of cents from 0 to 9007199254740991, got -1 at line 1 column 15\"}"
+ },
+ {
+  "name": "phone-duplicate-key",
+  "method": "PATCH",
+  "path": "/api/v1/phones/{serial}",
+  "headers": [
+   "Content-Type: application/json"
+  ],
+  "signedIn": true,
+  "body": "{\"location\":\"a\",\"location\":\"b\"}",
+  "status": "422",
+  "response": "{\"error\":\"duplicate field `location` at line 1 column 26\"}"
+ },
+ {
+  "name": "phone-no-ctype",
+  "method": "PATCH",
+  "path": "/api/v1/phones/{serial}",
+  "headers": [],
+  "signedIn": true,
+  "body": "{\"location\":\"x\"}",
+  "status": "415",
+  "response": "{\"error\":\"send Content-Type: application/json\"}"
+ },
+ {
+  "name": "phone-text-ctype",
+  "method": "PATCH",
+  "path": "/api/v1/phones/{serial}",
+  "headers": [
+   "Content-Type: text/plain"
+  ],
+  "signedIn": true,
+  "body": "{\"location\":\"x\"}",
+  "status": "415",
+  "response": "{\"error\":\"send Content-Type: application/json\"}"
+ },
+ {
+  "name": "phone-form",
+  "method": "PATCH",
+  "path": "/api/v1/phones/{serial}",
+  "headers": [
+   "Content-Type: application/x-www-form-urlencoded"
+  ],
+  "signedIn": true,
+  "body": "location=x",
+  "status": "415",
+  "response": "{\"error\":\"send Content-Type: application/json\"}"
+ },
+ {
+  "name": "phone-unknown-valid-body",
+  "method": "PATCH",
+  "path": "/api/v1/phones/NOPE",
+  "headers": [
+   "Content-Type: application/json"
+  ],
+  "signedIn": true,
+  "body": "{\"location\":\"x\"}",
+  "status": "404",
+  "response": "{\"error\":\"no phone NOPE\"}"
+ },
+ {
+  "name": "phone-unknown-bad-body",
+  "method": "PATCH",
+  "path": "/api/v1/phones/NOPE",
+  "headers": [
+   "Content-Type: application/json"
+  ],
+  "signedIn": true,
+  "body": "{\"costCents\":-1}",
+  "status": "422",
+  "response": "{\"error\":\"costCents: expected a whole number of cents from 0 to 9007199254740991, got -1 at line 1 column 16\"}"
+ },
+ {
+  "name": "sim-bad-status",
+  "method": "PATCH",
+  "path": "/api/v1/sims/{sim}",
+  "headers": [
+   "Content-Type: application/json"
+  ],
+  "signedIn": true,
+  "body": "{\"status\":\"x\"}",
+  "status": "422",
+  "response": "{\"error\":\"status: unknown variant `x`, expected one of `active`, `spare`, `retired` at line 1 column 13\"}"
+ },
+ {
+  "name": "sim-empty",
+  "method": "PATCH",
+  "path": "/api/v1/sims/{sim}",
+  "headers": [
+   "Content-Type: application/json"
+  ],
+  "signedIn": true,
+  "body": "{}",
+  "status": "200"
+ },
+ {
+  "name": "sim-unknown",
+  "method": "PATCH",
+  "path": "/api/v1/sims/{sim}",
+  "headers": [
+   "Content-Type: application/json"
+  ],
+  "signedIn": true,
+  "body": "{\"nope\":1}",
+  "status": "422",
+  "response": "{\"error\":\"nope: unknown field `nope`, expected `status` at line 1 column 7\"}"
+ },
+ {
+  "name": "number-bad-e164",
+  "method": "PATCH",
+  "path": "/api/v1/numbers/{number}",
+  "headers": [
+   "Content-Type: application/json"
+  ],
+  "signedIn": true,
+  "body": "{\"e164\":\"12\"}",
+  "status": "400",
+  "response": "{\"error\":\"\\\"12\\\" is not a phone number in E.164 or 10-digit US form\"}"
+ },
+ {
+  "name": "number-note-long",
+  "method": "PATCH",
+  "path": "/api/v1/numbers/{number}",
+  "headers": [
+   "Content-Type: application/json"
+  ],
+  "signedIn": true,
+  "body": "{\"note\": \"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\"}",
+  "status": "422",
+  "response": "{\"error\":\"note: expected a string of at most 2000 characters, got 2001 at line 1 column 2013\"}"
+ },
+ {
+  "name": "number-note-number",
+  "method": "PATCH",
+  "path": "/api/v1/numbers/{number}",
+  "headers": [
+   "Content-Type: application/json"
+  ],
+  "signedIn": true,
+  "body": "{\"note\":5}",
+  "status": "422",
+  "response": "{\"error\":\"note: invalid type: integer `5`, expected a string at line 1 column 9\"}"
+ },
+ {
+  "name": "number-empty",
+  "method": "PATCH",
+  "path": "/api/v1/numbers/{number}",
+  "headers": [
+   "Content-Type: application/json"
+  ],
+  "signedIn": true,
+  "body": "{}",
+  "status": "200"
+ },
+ {
+  "name": "number-unknown",
+  "method": "PATCH",
+  "path": "/api/v1/numbers/{number}",
+  "headers": [
+   "Content-Type: application/json"
+  ],
+  "signedIn": true,
+  "body": "{\"nope\":1}",
+  "status": "422",
+  "response": "{\"error\":\"nope: unknown field `nope`, expected `note` or `e164` at line 1 column 7\"}"
+ },
+ {
+  "name": "messages-limit-repeat",
+  "method": "GET",
+  "path": "/api/v1/messages?limit=1&limit=2",
+  "headers": [],
+  "signedIn": true,
+  "body": null,
+  "status": "200"
+ },
+ {
+  "name": "messages-limit-repeat-rev",
+  "method": "GET",
+  "path": "/api/v1/messages?limit=2&limit=1",
+  "headers": [],
+  "signedIn": true,
+  "body": null,
+  "status": "200"
+ },
+ {
+  "name": "messages-before-after",
+  "method": "GET",
+  "path": "/api/v1/messages?before=1&after=1",
+  "headers": [],
+  "signedIn": true,
+  "body": null,
+  "status": "400",
+  "response": "{\"error\":\"use before or after, not both\"}"
+ },
+ {
+  "name": "messages-before-x",
+  "method": "GET",
+  "path": "/api/v1/messages?before=x",
+  "headers": [],
+  "signedIn": true,
+  "body": null,
+  "status": "422",
+  "response": "{\"error\":\"before: expected an integer from 0 to 9007199254740991, got \\\"x\\\"\"}"
+ },
+ {
+  "name": "messages-after-neg",
+  "method": "GET",
+  "path": "/api/v1/messages?after=-1",
+  "headers": [],
+  "signedIn": true,
+  "body": null,
+  "status": "422",
+  "response": "{\"error\":\"after: expected an integer from 0 to 9007199254740991, got \\\"-1\\\"\"}"
+ },
+ {
+  "name": "messages-limit-space",
+  "method": "GET",
+  "path": "/api/v1/messages?limit=%205",
+  "headers": [],
+  "signedIn": true,
+  "body": null,
+  "status": "200"
+ },
+ {
+  "name": "messages-limit-plus",
+  "method": "GET",
+  "path": "/api/v1/messages?limit=%2B5",
+  "headers": [],
+  "signedIn": true,
+  "body": null,
+  "status": "200"
+ },
+ {
+  "name": "messages-limit-float",
+  "method": "GET",
+  "path": "/api/v1/messages?limit=5.0",
+  "headers": [],
+  "signedIn": true,
+  "body": null,
+  "status": "200"
+ },
+ {
+  "name": "messages-limit-empty",
+  "method": "GET",
+  "path": "/api/v1/messages?limit=",
+  "headers": [],
+  "signedIn": true,
+  "body": null,
+  "status": "422",
+  "response": "{\"error\":\"limit: expected an integer from 1 to 500, got \\\"\\\"\"}"
+ },
+ {
+  "name": "messages-q-empty",
+  "method": "GET",
+  "path": "/api/v1/messages?q=",
+  "headers": [],
+  "signedIn": true,
+  "body": null,
+  "status": "200"
+ },
+ {
+  "name": "key-create-ctype",
+  "method": "POST",
+  "path": "/api/v1/api-keys",
+  "headers": [],
+  "signedIn": true,
+  "body": "{\"name\":\"x\",\"scope\":\"read\"}",
+  "status": "415",
+  "response": "{\"error\":\"send Content-Type: application/json\"}"
+ },
+ {
+  "name": "key-create-bad-scope",
+  "method": "POST",
+  "path": "/api/v1/api-keys",
+  "headers": [
+   "Content-Type: application/json"
+  ],
+  "signedIn": true,
+  "body": "{\"name\":\"x\",\"scope\":\"x\"}",
+  "status": "422",
+  "response": "{\"error\":\"scope: unknown variant `x`, expected `read` or `full` at line 1 column 23\"}"
+ },
+ {
+  "name": "key-create-blank",
+  "method": "POST",
+  "path": "/api/v1/api-keys",
+  "headers": [
+   "Content-Type: application/json"
+  ],
+  "signedIn": true,
+  "body": "{\"name\":\" \",\"scope\":\"read\"}",
+  "status": "400",
+  "response": "{\"error\":\"a key name is 1-64 characters\"}"
+ },
+ {
+  "name": "key-delete-unknown",
+  "method": "DELETE",
+  "path": "/api/v1/api-keys/999999",
+  "headers": [],
+  "signedIn": true,
+  "body": null,
+  "status": "404",
+  "response": "{\"error\":\"no API key 999999\"}"
+ },
+ {
+  "name": "key-delete-x",
+  "method": "DELETE",
+  "path": "/api/v1/api-keys/x",
+  "headers": [],
+  "signedIn": true,
+  "body": null,
+  "status": "422",
+  "response": "{\"error\":\"id: expected an integer, got \\\"x\\\"\"}"
+ },
+ {
+  "name": "password-short",
+  "method": "POST",
+  "path": "/api/v1/auth/password",
+  "headers": [
+   "Content-Type: application/json"
+  ],
+  "signedIn": true,
+  "body": "{\"current\":\"wrong-pass-1\",\"next\":\"a\"}",
+  "status": "403",
+  "response": "{\"error\":\"the current password is wrong\"}"
+ },
+ {
+  "name": "events-bad-type",
+  "method": "GET",
+  "path": "/api/v1/events?types=nope",
+  "headers": [],
+  "signedIn": true,
+  "body": null,
+  "status": "400",
+  "response": "{\"error\":\"types must be device, message, or both, not \\\"nope\\\"\"}"
+ },
+ {
+  "name": "events-bad-latest",
+  "method": "GET",
+  "path": "/api/v1/events?latest=x",
+  "headers": [],
+  "signedIn": true,
+  "body": null,
+  "status": "422",
+  "response": "{\"error\":\"latest: expected an integer from 0 to 500, got \\\"x\\\"\"}"
+ },
+ {
+  "name": "numbers-messages-bare",
+  "method": "GET",
+  "path": "/api/v1/numbers/{number}/messages?limit=x",
+  "headers": [],
+  "signedIn": true,
+  "body": null,
+  "status": "422",
+  "response": "{\"error\":\"limit: expected an integer from 1 to 500, got \\\"x\\\"\"}"
+ },
+ {
+  "name": "options",
+  "method": "OPTIONS",
+  "path": "/api/v1/phones",
+  "headers": [],
+  "signedIn": true,
+  "body": null,
+  "status": "404",
+  "response": "{\"error\":\"not found\"}"
+ },
+ {
+  "name": "assets-dir",
+  "method": "GET",
+  "path": "/assets/",
+  "headers": [],
+  "signedIn": true,
+  "body": null,
+  "status": "404",
+  "response": "not found"
+ },
+ {
+  "name": "assets-missing",
+  "method": "GET",
+  "path": "/assets/nope.js",
+  "headers": [],
+  "signedIn": true,
+  "body": null,
+  "status": "404",
+  "response": "not found"
+ },
+ {
+  "name": "trailing-slash",
+  "method": "GET",
+  "path": "/api/v1/phones/",
+  "headers": [],
+  "signedIn": true,
+  "body": null,
+  "status": "200"
+ },
+ {
+  "name": "double-slash",
+  "method": "GET",
+  "path": "/api//v1/phones",
+  "headers": [],
+  "signedIn": true,
+  "body": null,
+  "status": "404",
+  "response": "{\"error\":\"not found\"}"
+ },
+ {
+  "name": "login-not-json",
+  "method": "POST",
+  "path": "/api/v1/auth/login",
+  "headers": [
+   "Content-Type: application/json"
+  ],
+  "signedIn": false,
+  "body": "{",
+  "status": "400",
+  "response": "{\"error\":\"?: EOF while parsing an object at line 1 column 1\"}"
+ },
+ {
+  "name": "login-array",
+  "method": "POST",
+  "path": "/api/v1/auth/login",
+  "headers": [
+   "Content-Type: application/json"
+  ],
+  "signedIn": false,
+  "body": "[]",
+  "status": "422",
+  "response": "{\"error\":\"invalid length 0, expected struct Credentials with 2 elements at line 1 column 2\"}"
+ },
+ {
+  "name": "login-null",
+  "method": "POST",
+  "path": "/api/v1/auth/login",
+  "headers": [
+   "Content-Type: application/json"
+  ],
+  "signedIn": false,
+  "body": "null",
+  "status": "422",
+  "response": "{\"error\":\"invalid type: null, expected struct Credentials at line 1 column 4\"}"
+ },
+ {
+  "name": "login-empty",
+  "method": "POST",
+  "path": "/api/v1/auth/login",
+  "headers": [
+   "Content-Type: application/json"
+  ],
+  "signedIn": false,
+  "body": "{}",
+  "status": "422",
+  "response": "{\"error\":\"missing field `name` at line 1 column 2\"}"
+ },
+ {
+  "name": "login-name-only",
+  "method": "POST",
+  "path": "/api/v1/auth/login",
+  "headers": [
+   "Content-Type: application/json"
+  ],
+  "signedIn": false,
+  "body": "{\"name\":\"ghost\"}",
+  "status": "422",
+  "response": "{\"error\":\"missing field `password` at line 1 column 16\"}"
+ },
+ {
+  "name": "login-password-number",
+  "method": "POST",
+  "path": "/api/v1/auth/login",
+  "headers": [
+   "Content-Type: application/json"
+  ],
+  "signedIn": false,
+  "body": "{\"name\":\"ghost\",\"password\":5}",
+  "status": "422",
+  "response": "{\"error\":\"password: invalid type: integer `5`, expected a string at line 1 column 28\"}"
+ },
+ {
+  "name": "login-unknown",
+  "method": "POST",
+  "path": "/api/v1/auth/login",
+  "headers": [
+   "Content-Type: application/json"
+  ],
+  "signedIn": false,
+  "body": "{\"name\":\"ghost\",\"password\":\"x\",\"nope\":1}",
+  "status": "401",
+  "response": "{\"error\":\"wrong name or password\"}"
+ },
+ {
+  "name": "login-long-name",
+  "method": "POST",
+  "path": "/api/v1/auth/login",
+  "headers": [
+   "Content-Type: application/json"
+  ],
+  "signedIn": false,
+  "body": "{\"name\": \"gggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg\", \"password\": \"x\"}",
+  "status": "422",
+  "response": "{\"error\":\"name: expected a string of at most 64 characters, got 300 at line 1 column 311\"}"
+ },
+ {
+  "name": "login-long-password",
+  "method": "POST",
+  "path": "/api/v1/auth/login",
+  "headers": [
+   "Content-Type: application/json"
+  ],
+  "signedIn": false,
+  "body": "{\"name\": \"ghost\", \"password\": \"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\"}",
+  "status": "422",
+  "response": "{\"error\":\"password: expected a string of at most 1024 characters, got 2000 at line 1 column 2033\"}"
+ },
+ {
+  "name": "login-duplicate",
+  "method": "POST",
+  "path": "/api/v1/auth/login",
+  "headers": [
+   "Content-Type: application/json"
+  ],
+  "signedIn": false,
+  "body": "{\"name\":\"ghost\",\"name\":\"ghost2\",\"password\":\"x\"}",
+  "status": "422",
+  "response": "{\"error\":\"duplicate field `name` at line 1 column 22\"}"
+ },
+ {
+  "name": "login-ctype-charset",
+  "method": "POST",
+  "path": "/api/v1/auth/login",
+  "headers": [
+   "Content-Type: application/json; charset=utf-8"
+  ],
+  "signedIn": false,
+  "body": "{\"name\":\"ghost\",\"password\":\"wrong-password\"}",
+  "status": "401",
+  "response": "{\"error\":\"wrong name or password\"}"
+ },
+ {
+  "name": "login-no-ctype",
+  "method": "POST",
+  "path": "/api/v1/auth/login",
+  "headers": [],
+  "signedIn": false,
+  "body": "{\"name\":\"ghost\",\"password\":\"x\"}",
+  "status": "415",
+  "response": "{\"error\":\"send Content-Type: application/json\"}"
+ },
+ {
+  "name": "password-not-json",
+  "method": "POST",
+  "path": "/api/v1/auth/password",
+  "headers": [
+   "Content-Type: application/json"
+  ],
+  "signedIn": true,
+  "body": "{",
+  "status": "400",
+  "response": "{\"error\":\"?: EOF while parsing an object at line 1 column 1\"}"
+ },
+ {
+  "name": "password-empty",
+  "method": "POST",
+  "path": "/api/v1/auth/password",
+  "headers": [
+   "Content-Type: application/json"
+  ],
+  "signedIn": true,
+  "body": "{}",
+  "status": "422",
+  "response": "{\"error\":\"missing field `current` at line 1 column 2\"}"
+ },
+ {
+  "name": "password-array",
+  "method": "POST",
+  "path": "/api/v1/auth/password",
+  "headers": [
+   "Content-Type: application/json"
+  ],
+  "signedIn": true,
+  "body": "[]",
+  "status": "422",
+  "response": "{\"error\":\"invalid length 0, expected struct PasswordChange with 2 elements at line 1 column 2\"}"
+ },
+ {
+  "name": "password-current-only",
+  "method": "POST",
+  "path": "/api/v1/auth/password",
+  "headers": [
+   "Content-Type: application/json"
+  ],
+  "signedIn": true,
+  "body": "{\"current\":\"wrong-password-1\"}",
+  "status": "422",
+  "response": "{\"error\":\"missing field `next` at line 1 column 30\"}"
+ },
+ {
+  "name": "password-unknown",
+  "method": "POST",
+  "path": "/api/v1/auth/password",
+  "headers": [
+   "Content-Type: application/json"
+  ],
+  "signedIn": true,
+  "body": "{\"current\":\"wrong-password-1\",\"next\":\"long-enough-pass\",\"nope\":1}",
+  "status": "403",
+  "response": "{\"error\":\"the current password is wrong\"}"
+ },
+ {
+  "name": "password-next-number",
+  "method": "POST",
+  "path": "/api/v1/auth/password",
+  "headers": [
+   "Content-Type: application/json"
+  ],
+  "signedIn": true,
+  "body": "{\"current\":\"wrong-password-1\",\"next\":5}",
+  "status": "422",
+  "response": "{\"error\":\"next: invalid type: integer `5`, expected a string at line 1 column 38\"}"
+ },
+ {
+  "name": "password-no-ctype",
+  "method": "POST",
+  "path": "/api/v1/auth/password",
+  "headers": [],
+  "signedIn": true,
+  "body": "{\"current\":\"a\",\"next\":\"b\"}",
+  "status": "415",
+  "response": "{\"error\":\"send Content-Type: application/json\"}"
+ },
+ {
+  "name": "key-not-json",
+  "method": "POST",
+  "path": "/api/v1/api-keys",
+  "headers": [
+   "Content-Type: application/json"
+  ],
+  "signedIn": true,
+  "body": "{",
+  "status": "400",
+  "response": "{\"error\":\"?: EOF while parsing an object at line 1 column 1\"}"
+ },
+ {
+  "name": "key-empty",
+  "method": "POST",
+  "path": "/api/v1/api-keys",
+  "headers": [
+   "Content-Type: application/json"
+  ],
+  "signedIn": true,
+  "body": "{}",
+  "status": "422",
+  "response": "{\"error\":\"missing field `name` at line 1 column 2\"}"
+ },
+ {
+  "name": "key-array",
+  "method": "POST",
+  "path": "/api/v1/api-keys",
+  "headers": [
+   "Content-Type: application/json"
+  ],
+  "signedIn": true,
+  "body": "[]",
+  "status": "422",
+  "response": "{\"error\":\"invalid length 0, expected struct KeyRequest with 2 elements at line 1 column 2\"}"
+ },
+ {
+  "name": "key-name-only",
+  "method": "POST",
+  "path": "/api/v1/api-keys",
+  "headers": [
+   "Content-Type: application/json"
+  ],
+  "signedIn": true,
+  "body": "{\"name\":\"x\"}",
+  "status": "422",
+  "response": "{\"error\":\"missing field `scope` at line 1 column 12\"}"
+ },
+ {
+  "name": "key-scope-only",
+  "method": "POST",
+  "path": "/api/v1/api-keys",
+  "headers": [
+   "Content-Type: application/json"
+  ],
+  "signedIn": true,
+  "body": "{\"scope\":\"read\"}",
+  "status": "422",
+  "response": "{\"error\":\"missing field `name` at line 1 column 16\"}"
+ },
+ {
+  "name": "key-unknown",
+  "method": "POST",
+  "path": "/api/v1/api-keys",
+  "headers": [
+   "Content-Type: application/json"
+  ],
+  "signedIn": true,
+  "body": "{\"name\":\"x\",\"scope\":\"read\",\"nope\":1}",
+  "status": "200"
+ },
+ {
+  "name": "key-name-number",
+  "method": "POST",
+  "path": "/api/v1/api-keys",
+  "headers": [
+   "Content-Type: application/json"
+  ],
+  "signedIn": true,
+  "body": "{\"name\":5,\"scope\":\"read\"}",
+  "status": "422",
+  "response": "{\"error\":\"name: invalid type: integer `5`, expected a string at line 1 column 9\"}"
+ },
+ {
+  "name": "key-long-name",
+  "method": "POST",
+  "path": "/api/v1/api-keys",
+  "headers": [
+   "Content-Type: application/json"
+  ],
+  "signedIn": true,
+  "body": "{\"name\": \"kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk\", \"scope\": \"read\"}",
+  "status": "422",
+  "response": "{\"error\":\"name: expected a string of at most 64 characters, got 65 at line 1 column 76\"}"
+ },
+ {
+  "name": "messages-before-repeat",
+  "method": "GET",
+  "path": "/api/v1/messages?before=5&before=6",
+  "headers": [],
+  "signedIn": true,
+  "body": null,
+  "status": "200"
+ },
+ {
+  "name": "messages-after-repeat",
+  "method": "GET",
+  "path": "/api/v1/messages?after=5&after=6",
+  "headers": [],
+  "signedIn": true,
+  "body": null,
+  "status": "200"
+ },
+ {
+  "name": "messages-q-repeat",
+  "method": "GET",
+  "path": "/api/v1/messages?q=zzzz&q=yyyy",
+  "headers": [],
+  "signedIn": true,
+  "body": null,
+  "status": "200"
+ },
+ {
+  "name": "messages-limit-first-bad",
+  "method": "GET",
+  "path": "/api/v1/messages?limit=x&limit=5",
+  "headers": [],
+  "signedIn": true,
+  "body": null,
+  "status": "422",
+  "response": "{\"error\":\"limit: expected an integer from 1 to 500, got \\\"x\\\"\"}"
+ },
+ {
+  "name": "messages-limit-second-bad",
+  "method": "GET",
+  "path": "/api/v1/messages?limit=5&limit=x",
+  "headers": [],
+  "signedIn": true,
+  "body": null,
+  "status": "200"
+ },
+ {
+  "name": "messages-limit-max",
+  "method": "GET",
+  "path": "/api/v1/messages?limit=501",
+  "headers": [],
+  "signedIn": true,
+  "body": null,
+  "status": "422",
+  "response": "{\"error\":\"limit: expected an integer from 1 to 500, got \\\"501\\\"\"}"
+ },
+ {
+  "name": "events-types-empty-twice",
+  "method": "GET",
+  "path": "/api/v1/events?types=&types=",
+  "headers": [],
+  "signedIn": true,
+  "body": null,
+  "status": "400",
+  "response": "{\"error\":\"types must be device, message, or both, not \\\",\\\"\"}"
+ },
+ {
+  "name": "events-types-repeat",
+  "method": "GET",
+  "path": "/api/v1/events?types=device&types=message",
+  "headers": [],
+  "signedIn": true,
+  "body": null,
+  "status": "200"
+ },
+ {
+  "name": "events-latest-repeat",
+  "method": "GET",
+  "path": "/api/v1/events?latest=1&latest=2",
+  "headers": [],
+  "signedIn": true,
+  "body": null,
+  "status": "200"
+ },
+ {
+  "name": "events-latest-big",
+  "method": "GET",
+  "path": "/api/v1/events?latest=501",
+  "headers": [],
+  "signedIn": true,
+  "body": null,
+  "status": "422",
+  "response": "{\"error\":\"latest: expected an integer from 0 to 500, got \\\"501\\\"\"}"
+ },
+ {
+  "name": "events-after-x",
+  "method": "GET",
+  "path": "/api/v1/events?after=x",
+  "headers": [],
+  "signedIn": true,
+  "body": null,
+  "status": "200"
+ },
+ {
+  "name": "login-emoji-40",
+  "method": "POST",
+  "path": "/api/v1/auth/login",
+  "headers": [
+   "Content-Type: application/json"
+  ],
+  "signedIn": false,
+  "body": "{\"name\": \"\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\", \"password\": \"x\"}",
+  "status": "422",
+  "response": "{\"error\":\"name: expected a string of at most 64 characters, got 80 at line 1 column 491\"}"
+ },
+ {
+  "name": "login-emoji-65",
+  "method": "POST",
+  "path": "/api/v1/auth/login",
+  "headers": [
+   "Content-Type: application/json"
+  ],
+  "signedIn": false,
+  "body": "{\"name\": \"\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\", \"password\": \"x\"}",
+  "status": "422",
+  "response": "{\"error\":\"name: expected a string of at most 64 characters, got 130 at line 1 column 791\"}"
+ },
+ {
+  "name": "login-name-empty",
+  "method": "POST",
+  "path": "/api/v1/auth/login",
+  "headers": [
+   "Content-Type: application/json"
+  ],
+  "signedIn": false,
+  "body": "{\"name\":\"\",\"password\":\"x\"}",
+  "status": "422",
+  "response": "{\"error\":\"name: expected a string of at least 1 characters, got 0 at line 1 column 10\"}"
+ },
+ {
+  "name": "login-password-empty",
+  "method": "POST",
+  "path": "/api/v1/auth/login",
+  "headers": [
+   "Content-Type: application/json"
+  ],
+  "signedIn": false,
+  "body": "{\"name\":\"ghost\",\"password\":\"\"}",
+  "status": "422",
+  "response": "{\"error\":\"password: expected a string of at least 1 characters, got 0 at line 1 column 30\"}"
+ },
+ {
+  "name": "key-emoji-40",
+  "method": "POST",
+  "path": "/api/v1/api-keys",
+  "headers": [
+   "Content-Type: application/json"
+  ],
+  "signedIn": true,
+  "body": "{\"name\": \"\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\", \"scope\": \"read\"}",
+  "status": "422",
+  "response": "{\"error\":\"name: expected a string of at most 64 characters, got 80 at line 1 column 491\"}"
+ },
+ {
+  "name": "phone-location-emoji-40",
+  "method": "PATCH",
+  "path": "/api/v1/phones/NOPE",
+  "headers": [
+   "Content-Type: application/json"
+  ],
+  "signedIn": true,
+  "body": "{\"location\": \"\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\"}",
+  "status": "422",
+  "response": "{\"error\":\"location: expected a string of at most 64 characters, got 80 at line 1 column 496\"}"
+ },
+ {
+  "name": "phone-location-emoji-65",
+  "method": "PATCH",
+  "path": "/api/v1/phones/NOPE",
+  "headers": [
+   "Content-Type: application/json"
+  ],
+  "signedIn": true,
+  "body": "{\"location\": \"\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\"}",
+  "status": "422",
+  "response": "{\"error\":\"location: expected a string of at most 64 characters, got 130 at line 1 column 796\"}"
+ },
+ {
+  "name": "phone-cents-max",
+  "method": "PATCH",
+  "path": "/api/v1/phones/NOPE",
+  "headers": [
+   "Content-Type: application/json"
+  ],
+  "signedIn": true,
+  "body": "{\"costCents\":9007199254740991}",
+  "status": "404",
+  "response": "{\"error\":\"no phone NOPE\"}"
+ },
+ {
+  "name": "phone-cents-exp",
+  "method": "PATCH",
+  "path": "/api/v1/phones/NOPE",
+  "headers": [
+   "Content-Type: application/json"
+  ],
+  "signedIn": true,
+  "body": "{\"costCents\":1e2}",
+  "status": "404",
+  "response": "{\"error\":\"no phone NOPE\"}"
+ },
+ {
+  "name": "phone-cents-null",
+  "method": "PATCH",
+  "path": "/api/v1/phones/NOPE",
+  "headers": [
+   "Content-Type: application/json"
+  ],
+  "signedIn": true,
+  "body": "{\"costCents\":null}",
+  "status": "404",
+  "response": "{\"error\":\"no phone NOPE\"}"
+ },
+ {
+  "name": "phone-acquired-leap",
+  "method": "PATCH",
+  "path": "/api/v1/phones/NOPE",
+  "headers": [
+   "Content-Type: application/json"
+  ],
+  "signedIn": true,
+  "body": "{\"acquiredOn\":\"2024-02-29\"}",
+  "status": "404",
+  "response": "{\"error\":\"no phone NOPE\"}"
+ },
+ {
+  "name": "number-e164-null",
+  "method": "PATCH",
+  "path": "/api/v1/numbers/999999",
+  "headers": [
+   "Content-Type: application/json"
+  ],
+  "signedIn": true,
+  "body": "{\"e164\":null}",
+  "status": "404",
+  "response": "{\"error\":\"no number 999999\"}"
+ },
+ {
+  "name": "number-note-null",
+  "method": "PATCH",
+  "path": "/api/v1/numbers/999999",
+  "headers": [
+   "Content-Type: application/json"
+  ],
+  "signedIn": true,
+  "body": "{\"note\":null}",
+  "status": "422",
+  "response": "{\"error\":\"note: expected a value, got null at line 1 column 13\"}"
+ },
+ {
+  "name": "sim-status-null",
+  "method": "PATCH",
+  "path": "/api/v1/sims/NOPE",
+  "headers": [
+   "Content-Type: application/json"
+  ],
+  "signedIn": true,
+  "body": "{\"status\":null}",
+  "status": "422",
+  "response": "{\"error\":\"status: expected a value, got null at line 1 column 15\"}"
+ },
+ {
+  "name": "phone-trailing-garbage",
+  "method": "PATCH",
+  "path": "/api/v1/phones/NOPE",
+  "headers": [
+   "Content-Type: application/json"
+  ],
+  "signedIn": true,
+  "body": "{} x",
+  "status": "400",
+  "response": "{\"error\":\"trailing characters at line 1 column 4\"}"
+ },
+ {
+  "name": "phone-empty-body",
+  "method": "PATCH",
+  "path": "/api/v1/phones/NOPE",
+  "headers": [
+   "Content-Type: application/json"
+  ],
+  "signedIn": true,
+  "body": "",
+  "status": "422",
+  "response": "{\"error\":\"EOF while parsing a value at line 1 column 0\"}"
+ },
+ {
+  "name": "phone-unknown",
+  "method": "PATCH",
+  "path": "/api/v1/phones/NOPE",
+  "headers": [
+   "Content-Type: application/json"
+  ],
+  "signedIn": true,
+  "body": "{\"nope\":1}",
+  "status": "422",
+  "response": "{\"error\":\"nope: unknown field `nope`, expected one of `location`, `hubPort`, `costCents`, `acquiredOn` at line 1 column 7\"}"
+ },
+ {
+  "name": "phone-array1",
+  "method": "PATCH",
+  "path": "/api/v1/phones/NOPE",
+  "headers": [
+   "Content-Type: application/json"
+  ],
+  "signedIn": true,
+  "body": "[1]",
+  "status": "422",
+  "response": "{\"error\":\"[0]: invalid type: integer `1`, expected a string at line 1 column 2\"}"
+ },
+ {
+  "name": "phone-array5",
+  "method": "PATCH",
+  "path": "/api/v1/phones/NOPE",
+  "headers": [
+   "Content-Type: application/json"
+  ],
+  "signedIn": true,
+  "body": "[null,null,null,null,null]",
+  "status": "400",
+  "response": "{\"error\":\"trailing characters at line 1 column 22\"}"
+ },
+ {
+  "name": "sim-null",
+  "method": "PATCH",
+  "path": "/api/v1/sims/NOPE",
+  "headers": [
+   "Content-Type: application/json"
+  ],
+  "signedIn": true,
+  "body": "null",
+  "status": "422",
+  "response": "{\"error\":\"invalid type: null, expected struct SimPatchBody at line 1 column 4\"}"
+ },
+ {
+  "name": "sim-array1",
+  "method": "PATCH",
+  "path": "/api/v1/sims/NOPE",
+  "headers": [
+   "Content-Type: application/json"
+  ],
+  "signedIn": true,
+  "body": "[1]",
+  "status": "400",
+  "response": "{\"error\":\"[0]: expected value at line 1 column 2\"}"
+ },
+ {
+  "name": "sim-array5",
+  "method": "PATCH",
+  "path": "/api/v1/sims/NOPE",
+  "headers": [
+   "Content-Type: application/json"
+  ],
+  "signedIn": true,
+  "body": "[null,null,null,null,null]",
+  "status": "422",
+  "response": "{\"error\":\"[0]: expected a value, got null at line 1 column 6\"}"
+ },
+ {
+  "name": "sim-empty-body",
+  "method": "PATCH",
+  "path": "/api/v1/sims/NOPE",
+  "headers": [
+   "Content-Type: application/json"
+  ],
+  "signedIn": true,
+  "body": "",
+  "status": "422",
+  "response": "{\"error\":\"EOF while parsing a value at line 1 column 0\"}"
+ },
+ {
+  "name": "number-null",
+  "method": "PATCH",
+  "path": "/api/v1/numbers/999999",
+  "headers": [
+   "Content-Type: application/json"
+  ],
+  "signedIn": true,
+  "body": "null",
+  "status": "422",
+  "response": "{\"error\":\"invalid type: null, expected struct NumberPatchBody at line 1 column 4\"}"
+ },
+ {
+  "name": "number-array1",
+  "method": "PATCH",
+  "path": "/api/v1/numbers/999999",
+  "headers": [
+   "Content-Type: application/json"
+  ],
+  "signedIn": true,
+  "body": "[1]",
+  "status": "422",
+  "response": "{\"error\":\"[0]: invalid type: integer `1`, expected a string at line 1 column 2\"}"
+ },
+ {
+  "name": "number-array5",
+  "method": "PATCH",
+  "path": "/api/v1/numbers/999999",
+  "headers": [
+   "Content-Type: application/json"
+  ],
+  "signedIn": true,
+  "body": "[null,null,null,null,null]",
+  "status": "422",
+  "response": "{\"error\":\"[0]: expected a value, got null at line 1 column 6\"}"
+ },
+ {
+  "name": "number-empty-body",
+  "method": "PATCH",
+  "path": "/api/v1/numbers/999999",
+  "headers": [
+   "Content-Type: application/json"
+  ],
+  "signedIn": true,
+  "body": "",
+  "status": "422",
+  "response": "{\"error\":\"EOF while parsing a value at line 1 column 0\"}"
+ },
+ {
+  "name": "login-array3",
+  "method": "POST",
+  "path": "/api/v1/auth/login",
+  "headers": [
+   "Content-Type: application/json"
+  ],
+  "signedIn": false,
+  "body": "[\"a\",\"b\",\"c\"]",
+  "status": "400",
+  "response": "{\"error\":\"trailing characters at line 1 column 10\"}"
+ },
+ {
+  "name": "login-empty-body",
+  "method": "POST",
+  "path": "/api/v1/auth/login",
+  "headers": [
+   "Content-Type: application/json"
+  ],
+  "signedIn": false,
+  "body": "",
+  "status": "422",
+  "response": "{\"error\":\"EOF while parsing a value at line 1 column 0\"}"
+ },
+ {
+  "name": "key-empty-body",
+  "method": "POST",
+  "path": "/api/v1/api-keys",
+  "headers": [
+   "Content-Type: application/json"
+  ],
+  "signedIn": true,
+  "body": "",
+  "status": "422",
+  "response": "{\"error\":\"EOF while parsing a value at line 1 column 0\"}"
+ },
+ {
+  "name": "phone-hubport-number",
+  "method": "PATCH",
+  "path": "/api/v1/phones/NOPE",
+  "headers": [
+   "Content-Type: application/json"
+  ],
+  "signedIn": true,
+  "body": "{\"hubPort\":5}",
+  "status": "422",
+  "response": "{\"error\":\"hubPort: invalid type: integer `5`, expected a string at line 1 column 12\"}"
+ },
+ {
+  "name": "phone-acquired-number",
+  "method": "PATCH",
+  "path": "/api/v1/phones/NOPE",
+  "headers": [
+   "Content-Type: application/json"
+  ],
+  "signedIn": true,
+  "body": "{\"acquiredOn\":5}",
+  "status": "422",
+  "response": "{\"error\":\"acquiredOn: invalid type: integer `5`, expected a string at line 1 column 15\"}"
+ },
+ {
+  "name": "number-e164-number",
+  "method": "PATCH",
+  "path": "/api/v1/numbers/999999",
+  "headers": [
+   "Content-Type: application/json"
+  ],
+  "signedIn": true,
+  "body": "{\"e164\":5}",
+  "status": "422",
+  "response": "{\"error\":\"e164: invalid type: integer `5`, expected a string at line 1 column 9\"}"
+ },
+ {
+  "name": "number-e164-long",
+  "method": "PATCH",
+  "path": "/api/v1/numbers/999999",
+  "headers": [
+   "Content-Type: application/json"
+  ],
+  "signedIn": true,
+  "body": "{\"e164\": \"111111111111111111111111111111111\"}",
+  "status": "422",
+  "response": "{\"error\":\"e164: expected a string of at most 32 characters, got 33 at line 1 column 45\"}"
+ },
+ {
+  "name": "sim-status-number",
+  "method": "PATCH",
+  "path": "/api/v1/sims/NOPE",
+  "headers": [
+   "Content-Type: application/json"
+  ],
+  "signedIn": true,
+  "body": "{\"status\":5}",
+  "status": "400",
+  "response": "{\"error\":\"status: expected value at line 1 column 11\"}"
+ },
+ {
+  "name": "phone-space-body",
+  "method": "PATCH",
+  "path": "/api/v1/phones/NOPE",
+  "headers": [
+   "Content-Type: application/json"
+  ],
+  "signedIn": true,
+  "body": " ",
+  "status": "400",
+  "response": "{\"error\":\"EOF while parsing a value at line 1 column 1\"}"
+ },
+ {
+  "name": "phone-newline-body",
+  "method": "PATCH",
+  "path": "/api/v1/phones/NOPE",
+  "headers": [
+   "Content-Type: application/json"
+  ],
+  "signedIn": true,
+  "body": "\n",
+  "status": "400",
+  "response": "{\"error\":\"EOF while parsing a value at line 2 column 0\"}"
+ },
+ {
+  "name": "phone-tabs-body",
+  "method": "PATCH",
+  "path": "/api/v1/phones/NOPE",
+  "headers": [
+   "Content-Type: application/json"
+  ],
+  "signedIn": true,
+  "body": "\t\t",
+  "status": "400",
+  "response": "{\"error\":\"EOF while parsing a value at line 1 column 2\"}"
+ }
+]

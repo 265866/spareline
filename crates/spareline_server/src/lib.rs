@@ -4,6 +4,7 @@
 mod account_commands;
 pub mod api_docs;
 mod api_error;
+mod app_state;
 mod buses;
 mod clock;
 mod config;
@@ -15,10 +16,12 @@ mod event_log;
 #[cfg(test)]
 mod fake_adb;
 pub mod healthcheck;
+pub mod http;
 mod login_limiter;
 pub mod monitor;
 mod policy_check;
 mod screen;
+mod service;
 mod shell_text;
 pub mod smoke;
 mod sms_ingest;
@@ -29,6 +32,7 @@ pub use account_commands::{
     CommandOutcome, KeysCommand, UsersCommand, parse_key_id, parse_scope, run_keys, run_users,
 };
 pub use api_error::ApiError;
+pub use app_state::{AppParts, AppState};
 pub use buses::{AuthChange, Buses};
 pub use clock::Clock;
 pub use config::{Config, EnvError, EnvIssue, SmokeSettings};
@@ -41,6 +45,7 @@ pub use event_log::{EventLog, LogLine};
 pub use login_limiter::LoginLimiter;
 pub use policy_check::{PolicyCheckError, policy_check, read_profile};
 pub use screen::{FrameRate, SCREEN_SOCKET_LIMIT, ScreenSession, ScreenState, Screens};
+pub use service::{Service, ServiceError, StopSignal};
 pub use sms_ingest::{
     IngestError, RECONCILE_INTERVAL, SmsIngest, SmsIngestOptions, TRIGGER_INTERVAL,
 };
