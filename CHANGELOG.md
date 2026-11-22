@@ -9,9 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.2.1](https://github.com/265866/spareline/compare/v0.2.0...v0.2.1) - 2026-11-22
 
+### Fixed
+
+- *(deploy)* keep a retired image that still has a name, and check each unit on its own ([#32](https://github.com/265866/spareline/pull/32))
+
 ### Other
 
 - *(deploy)* move the deploy kit into the spareline crate ([#35](https://github.com/265866/spareline/pull/35))
+- *(deploy)* name the kit's paths from the kit itself ([#34](https://github.com/265866/spareline/pull/34))
+- *(deploy)* silence the deploy.env source finding with a reason ([#30](https://github.com/265866/spareline/pull/30))
 
 ## [0.2.0](https://github.com/265866/spareline/releases/tag/v0.2.0) - 2026-11-22
 
