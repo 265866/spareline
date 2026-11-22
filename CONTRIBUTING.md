@@ -176,8 +176,9 @@ Each crate has one job. `just policy` checks every crate against the rules
 one:
 
 - **Place and manifest.** Put it in `crates/<name>`. Its `[lints]` table is exactly
-  `workspace = true`, and it inherits `edition`, `rust-version`, `publish` and `license` from the
-  workspace.
+  `workspace = true`. It inherits `version`, `edition`, `rust-version`, `publish` and `license`
+  from the workspace. The crates share one version, which release-plz bumps in the root
+  `Cargo.toml` alone; trellis doesn't support a crate versioned apart from the others.
 - **Settings.** Give it an entry in `internal_dependencies` in `[workspace.metadata.policy]`,
   which lists the workspace crates it may depend on directly, and list it in `changelog_include`
   in `release-plz.toml`, so its commits reach the release notes. A build script needs the crate in
@@ -185,6 +186,12 @@ one:
   `proc_macro_crates`. These settings are rules, so a new crate or a new edge between crates is a
   rule change. To rename a crate, follow "Rename a crate" in
   [docs/maintaining.md](docs/maintaining.md#rename-a-crate).
+- **Dependencies on other crates.** Name a workspace crate by its `path` alone, as
+  `<crate> = { path = "../<crate>" }`, with no `version`: cargo needs one only to publish.
+  release-plz rewrites that `version` when a release moves past what it allows, so the release
+  pull request would change the crate's `Cargo.toml`, which is code, beside the version in the
+  root `Cargo.toml`, a rule, and fail "Rule changes stand alone". `cargo add --path` writes the
+  `version`, and `just policy` fails until you remove it.
 
 ## Docs
 
@@ -298,6 +305,15 @@ banned one directly to the ban's `wrappers`, with the reason in a comment, such 
 `wrappers = ["some-crate"]` under `crate = "paste"`. Only that crate may then depend on it, and
 `just deny` passes, with a warning, while the dependency graph doesn't hold the wrapper yet. Then
 add the dependency in a code pull request.
+
+A framework that lets in `ctor` or `inventory` this way may also have its macros place
+constructors, code that runs before `main()`, in this project's own code, which
+`code_before_main` reports. GPUI's `actions!` and `#[derive(Action)]` do. Allow them in the same
+rules pull request as the `wrappers` entry: list each macro in `constructor_macros` in
+`dylint.toml`, by the path the report names, the crate that defines the macro and its name, such as
+`gpui::actions` and `gpui_macros::Action`. A listed macro may place any constructor, so list only
+the macros the framework needs. A constructor that one of this project's own macros writes stays
+reported, even inside a listed macro.
 
 An npm package of the web UI under a license `about.toml` doesn't accept lands the same way.
 First, in a rules pull request, accept the license for that package alone with an entry in

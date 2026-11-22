@@ -64,7 +64,7 @@ in its `justfile` names, so read them at that commit when `main` has moved on.
 | Avoid overloading operators for non-mathematical purposes | `operator_overload`: every operator impl needs an `expect` saying what the operator means (partly) |
 | Don't access `#[doc(hidden)]` items you don't own | `foreign_doc_hidden` |
 | Apply `#[must_use]` where ignoring a result is a mistake | `clippy::must_use_candidate`, `clippy::return_self_not_must_use`, `clippy::double_must_use` |
-| Don't run code before `main()` | cargo-deny bans `ctor`, `inventory` and `linkme` (`just deny`) |
+| Don't run code before `main()` | cargo-deny bans `ctor`, `inventory` and `linkme` (`just deny`); `code_before_main` (no static in a section that runs before `main()`, in this project's code, a macro's expansion included, unless a macro that `constructor_macros` in `dylint.toml` lists placed it with no macro of this project's inside it) |
 | Don't overuse type inference | `inferred_conversion_binding` (the results of `.parse()`, `.into()`, `.try_into()`, `.collect()`, `.sum()`, `.product()`, `.unzip()`, `.partition(..)` and `Default::default()` get a `let` type rather than a turbofish, except where `?`, `unwrap` or `expect` leaves the compiler nothing to infer from) |
 | Prefer pattern matching over check-then-unwrap | `clippy::unnecessary_unwrap`, `clippy::panicking_unwrap` |
 | A `#[should_panic]` test names the panic it expects | `clippy::should_panic_without_expect` |
@@ -129,8 +129,12 @@ Beyond the Google guide, the workspace also turns on:
 - `trellis-policy check` (`just policy`): every crate has an entry in `internal_dependencies` and
   depends directly only on the workspace crates its entry lists, dev and build dependencies
   included; a crate in `dev_only_crates` is allowed to every crate, but only as a dev-dependency. So
-  a new crate or a new edge between crates is a rule change. It also checks that every crate's
-  `[lints]` table is exactly `workspace = true`; that no crate has a build script unless
+  a new crate or a new edge between crates is a rule change. No crate's `[dependencies]` or
+  `[dev-dependencies]` gives a path dependency on another crate a `version`, on any platform, since
+  release-plz rewrites it when a release moves past what it allows, and the release pull request
+  would then change code beside the root `Cargo.toml`'s version, a rule; a published crate gives the
+  `version` in `[workspace.dependencies]` instead. It also checks that every crate's `[lints]` table
+  is exactly `workspace = true`; that no crate has a build script unless
   `build_script_crates` lists it, since a build script can set a `cfg` that hides code from the lint
   runs, and that a listed crate's `build` key names a file in the crate's own directory, in ASCII,
   with no `\`, no part that ends in a dot or a space and no part of the form of a Windows short
@@ -157,16 +161,20 @@ Beyond the Google guide, the workspace also turns on:
   hold one file, with the other's contents; that the workspace excludes nothing, pulls in no
   non-member crate by path, and loads only the trellis lints as its dylint library; that each
   crate's `Cargo.toml` holds only allowed keys (no `test = false`, `harness = false` outside a
-  `[[bench]]`, `auto*` or `required-features`), inherits `edition`, `rust-version` and `publish`,
-  and `license` when the workspace has one, and keeps its sources, `#[path]` files included, inside
-  the crate, with no symbolic link in or above its directory; that the repository holds no git
-  submodule, or other git repository, anywhere, since a checkout that initializes one holds files no
-  check or review read; that `.cargo/config.toml` holds only the Windows `+crt-static` flags; that a
-  crate depends directly only on proc-macro crates listed in `proc_macro_crates`, since a proc macro
-  writes code the custom lints don't check; that the root `AGENTS.md` is the only file of
-  instructions for coding agents; that every crate's commits reach the release notes through
-  `changelog_include` in `release-plz.toml`; that no crate but the ones `restricted_crates` lists
-  for a package reaches it, directly or through other packages, when that setting is there, and that
+  `[[bench]]`, `auto*` or `required-features`), inherits `version`, `edition`, `rust-version` and
+  `publish`, and `license` when the workspace has one (the crates share one version, which
+  release-plz bumps in the root `Cargo.toml` alone; trellis doesn't support a crate versioned apart
+  from the others), and keeps its sources, `#[path]` files included, inside the crate, with no
+  symbolic link in or above its directory; that the repository holds no git submodule, or other git
+  repository, anywhere, since a checkout that initializes one holds files no check or review read;
+  that `.cargo/config.toml` holds only the Windows `+crt-static` flags; that a crate depends
+  directly only on proc-macro crates listed in `proc_macro_crates`, since a proc macro writes code
+  the custom lints don't check; that the root `AGENTS.md` is the only file of instructions for
+  coding agents; that `release-plz.toml` exists, that every crate's commits reach the release notes
+  through `changelog_include` in it, and that release-plz can write no crate's changelog into its
+  directory or another place that is code, since a release pull request would change it beside the
+  root `Cargo.toml`'s version, a rule; that no crate but the ones `restricted_crates` lists for a
+  package reaches it, directly or through other packages, when that setting is there, and that
   each of its keys that lists crates matches a package; that every shell script in a deploy kit,
   under `crates/<crate>/deploy/` or the root `deploy/`, passes shellcheck, with no `.shellcheckrc`
   or `SHELLCHECK_OPTS` read, the files they source included, and that each shellcheck directive
@@ -246,8 +254,9 @@ a `cfg_attr` that only one of the clippy and dylint runs sees can't hide any of 
 
 Some lints have no exceptions, and an `expect` naming one fails: `code_comment`,
 `suppression_policy`, `missing_workspace_lints`, `disabled_code`, `doc_after_attribute` and
-`needless_raw_identifier` (fix the code), and `macro_definition` (a macro goes only in a crate that
-`macro_crates` in `dylint.toml` lists).
+`needless_raw_identifier` (fix the code), `macro_definition` (a macro goes only in a crate that
+`macro_crates` in `dylint.toml` lists), and `code_before_main` (only a macro that
+`constructor_macros` in `dylint.toml` lists may place a constructor).
 
 ## Checked in review
 

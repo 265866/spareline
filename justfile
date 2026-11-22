@@ -20,7 +20,7 @@ lints_nightly := "nightly-2026-11-12"
 
 # The trellis commit the lints in Cargo.toml and the checker below come from. `uvx copier update`
 # moves both.
-trellis_rev := "33b1aefe2b06ccddd0dec337cb06c275a8b0e2e3"
+trellis_rev := "75916a993d65062702ba4009c9c2b3fbadba6d4c"
 
 # rustdoc warnings fail `just docs` and the doctests. Cargo reads `CARGO_ENCODED_RUSTDOCFLAGS`
 # before `RUSTDOCFLAGS`, so a caller's setting of either, even an empty one, can't drop the flag.
@@ -56,14 +56,45 @@ install-tools:
 policy_root := justfile_directory() / "target" / "trellis-policy"
 trellis_policy := "./target/trellis-policy/bin/trellis-policy"
 
+# `cargo install --git` builds the checker as a member of trellis's workspace, so each trellis
+# commit builds to the same path, and cargo takes the sources it fetched as unchanging. Given a
+# target or build directory that holds a build from another commit, as CARGO_TARGET_DIR or
+# `build.build-dir` can give it, cargo installs that build without rebuilding and records the
+# pinned commit as installed. So the install builds in target/trellis-policy/build, new each time
+# and deleted after, as cargo does when nothing sets a target directory, and `--force` replaces
+# whatever cargo's record says is installed. After an install, target/trellis-policy/trellis-rev
+# records the commit and the binary's size and SHA-256, and a run skips the install only when all
+# three match, so a binary that is missing, or changed or replaced since, is installed again.
 # `--quiet` keeps cargo to its errors. Its warnings here are advice that doesn't apply: to add
 # `policy_root` to `PATH`, though recipes call the binary by its path, and that the toolchain in
-# rust-toolchain.toml builds it, which is the one the project pins. So the first run, which builds
-# the checker, prints nothing but the command for a while.
+# rust-toolchain.toml builds it, which is the one the project pins.
 #
-# Installs `trellis-policy` at the pinned commit. Cargo skips the build when it is already installed.
+# Installs `trellis-policy` at the pinned commit, unless that build is installed.
+[unix]
 install-policy:
-    cargo install --quiet --locked --root "{{ policy_root }}" --git https://github.com/265866/trellis --rev {{ trellis_rev }} trellis-policy
+    #!/usr/bin/env bash
+    set -euo pipefail
+    bin=target/trellis-policy/bin/trellis-policy stamp=target/trellis-policy/trellis-rev build=target/trellis-policy/build
+    record() {
+      local hash
+      if command -v sha256sum > /dev/null; then hash=$(sha256sum < "$bin")
+      elif command -v shasum > /dev/null; then hash=$(shasum -a 256 < "$bin")
+      else echo "error: install-policy needs sha256sum or shasum to record the checker it installs" >&2; exit 1
+      fi
+      echo "{{ trellis_rev }} $(wc -c < "$bin" | tr -d ' ') ${hash%% *}"
+    }
+    if [ -f "$bin" ] && [ -f "$stamp" ] && [ "$(cat "$stamp")" = "$(record)" ]; then exit 0; fi
+    echo "Installing trellis-policy at {{ trellis_rev }}." >&2
+    rm -rf "$stamp" "$build"
+    trap 'rm -rf "$build"' EXIT
+    CARGO_BUILD_BUILD_DIR="$build" cargo install --quiet --locked --force --root "{{ policy_root }}" \
+      --target-dir "$build" --git https://github.com/265866/trellis --rev {{ trellis_rev }} trellis-policy
+    record > "$stamp"
+
+# Installs `trellis-policy` at the pinned commit, unless that build is installed.
+[windows]
+install-policy:
+    @$ErrorActionPreference = 'Stop'; $bin = 'target/trellis-policy/bin/trellis-policy.exe'; $stamp = 'target/trellis-policy/trellis-rev'; $build = 'target/trellis-policy/build'; function Get-Record { "{{ trellis_rev }} $((Get-Item -LiteralPath $bin).Length) $((Get-FileHash -LiteralPath $bin -Algorithm SHA256).Hash.ToLowerInvariant())" }; if ((Test-Path -LiteralPath $bin) -and (Test-Path -LiteralPath $stamp) -and "$(Get-Content -LiteralPath $stamp -Raw)".Trim() -eq (Get-Record)) { exit 0 }; [Console]::Error.WriteLine('Installing trellis-policy at {{ trellis_rev }}.'); foreach ($path in $stamp, $build) { if (Test-Path -LiteralPath $path) { Remove-Item -LiteralPath $path -Recurse -Force } }; $env:CARGO_BUILD_BUILD_DIR = $build; $ErrorActionPreference = 'Continue'; cargo install --quiet --locked --force --root "{{ policy_root }}" --target-dir $build --git https://github.com/265866/trellis --rev {{ trellis_rev }} trellis-policy; $status = $LASTEXITCODE; $ErrorActionPreference = 'Stop'; if ($status -ne 0) { if (Test-Path -LiteralPath $build) { Remove-Item -LiteralPath $build -Recurse -Force }; exit $status }; Set-Content -LiteralPath $stamp -Value (Get-Record) -NoNewline; Remove-Item -LiteralPath $build -Recurse -Force -ErrorAction SilentlyContinue
 
 # Formats the Rust and TOML files.
 fmt:

@@ -18,6 +18,11 @@ lowercase_doc_words = [
 ]
 # Crates that may define macros (`macro_definition`). Listing a crate is a rule change.
 macro_crates = []
+# Macros allowed to place a static in a section that runs code before `main()`
+# (`code_before_main`), each as the crate that defines it and its name, the path the lint's report
+# names, such as `gpui::actions` or `gpui_macros::Action` for GPUI's actions. List one only when a
+# framework this project depends on needs it. Listing a macro is a rule change.
+constructor_macros = []
 # Crates whose macros may write `allow`, `warn`, `expect` and `ignore` attributes into this
 # project's code (`suppression_policy`, `disabled_code`). List a crate only once you have read what
 # its macros write. Name the crate that defines the macro, such as `serde_derive` for
