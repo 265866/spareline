@@ -1,0 +1,9 @@
+spareline
+Copyright 2026 265866
+
+This product includes scrcpy-server 3.3.3, built into the spareline binary from
+crates/spareline_server/assets/scrcpy-server-v3.3.3/,
+Copyright (C) 2018 Genymobile and Copyright (C) 2018-2025 Romain Vimont,
+licensed under the Apache License, Version 2.0. Its license is in
+crates/spareline_server/assets/scrcpy-server-v3.3.3/LICENSE, and in the container image at
+/usr/share/doc/spareline/scrcpy-server-v3.3.3/LICENSE.
