@@ -20,7 +20,7 @@ lints_nightly := "nightly-2026-11-12"
 
 # The trellis commit the lints in Cargo.toml and the checker below come from. `uvx copier update`
 # moves both.
-trellis_rev := "ac4a577aef824dd0fec414a30257cf22cdb94530"
+trellis_rev := "982b0d600d9b2fd8e4f56706de01425cc4e2a1e8"
 
 # rustdoc warnings fail `just docs` and the doctests. Cargo reads `CARGO_ENCODED_RUSTDOCFLAGS`
 # before `RUSTDOCFLAGS`, so a caller's setting of either, even an empty one, can't drop the flag.
@@ -115,8 +115,27 @@ lint:
 # Runs the custom lints from trellis, warnings as errors.
 dylint: (_dylint "-D warnings")
 
+# cargo-dylint 6.4.0 builds every revision of a git lint library into one target directory, and
+# cargo doesn't check the modification times of sources under CARGO_HOME, so after the trellis
+# commit in Cargo.toml moves it keeps the library it built before, and a run after an update would
+# check with the old lints. target/dylint/trellis-rev records the commit the libraries were built
+# from, and a different one deletes them first. It assumes the target directory is `target`.
 [private]
+[unix]
 _dylint $DYLINT_RUSTFLAGS:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    if [ "$(cat target/dylint/trellis-rev 2> /dev/null)" != "{{ trellis_rev }}" ]; then
+      rm -rf target/dylint/libraries
+      mkdir -p target/dylint
+      echo "{{ trellis_rev }}" > target/dylint/trellis-rev
+    fi
+    cargo dylint --all --fail-on-no-libraries -- --locked --workspace --all-targets --all-features
+
+[private]
+[windows]
+_dylint $DYLINT_RUSTFLAGS:
+    $ErrorActionPreference = 'Stop'; $stamp = 'target/dylint/trellis-rev'; if (-not (Test-Path -LiteralPath $stamp) -or "$(Get-Content -LiteralPath $stamp -Raw)".Trim() -ne '{{ trellis_rev }}') { if (Test-Path -LiteralPath target/dylint/libraries) { Remove-Item -LiteralPath target/dylint/libraries -Recurse -Force }; New-Item -ItemType Directory -Force -Path target/dylint > $null; Set-Content -LiteralPath $stamp -Value '{{ trellis_rev }}' -NoNewline }
     cargo dylint --all --fail-on-no-libraries -- --locked --workspace --all-targets --all-features
 
 # Runs the tests, then the doctests, which nextest does not run.
@@ -135,7 +154,10 @@ build-release:
     cargo build --locked --workspace --release
 
 # A clarification in about.toml that no longer applies is only logged, and a clean run logs
-# nothing, so any output fails it.
+# nothing, so any output fails it, but one warning: an entry for a crate the dependency graph
+# doesn't hold. That is how a rules pull request accepts a license for a crate before the code
+# pull request that adds it, as CONTRIBUTING.md says; `just stale-licenses`, which the weekly
+# Advisories workflow runs, fails on an entry whose crate has left the graph.
 #
 # Writes the license notices every release ships to target/THIRD-PARTY-LICENSES.html.
 [unix]
@@ -143,15 +165,40 @@ notices: web-notices
     #!/usr/bin/env bash
     set -uo pipefail
     mkdir -p target
-    log=$(cargo about generate --locked --fail about.hbs -o target/THIRD-PARTY-LICENSES.html 2>&1)
+    log=$(cargo about --color never generate --locked --fail about.hbs -o target/THIRD-PARTY-LICENSES.html 2>&1)
     status=$?
+    log=$(awk '$0 == "warning: config found for a crate not present in the graph" { skip = 1; next }
+      skip && $0 == "" { skip = 0; next } !skip' <<< "$log")
     if [ -n "$log" ]; then echo "$log" >&2; fi
     [ "$status" -eq 0 ] && [ -z "$log" ]
 
 # Writes the license notices every release ships to target/THIRD-PARTY-LICENSES.html.
 [windows]
 notices: web-notices
-    New-Item -ItemType Directory -Force target > $null; $log = cargo about generate --locked --fail about.hbs -o target/THIRD-PARTY-LICENSES.html 2>&1; $status = $LASTEXITCODE; $log | ForEach-Object { [Console]::Error.WriteLine("$_") }; if ($status -ne 0 -or $log) { exit 1 }
+    New-Item -ItemType Directory -Force target > $null; $log = cargo about --color never generate --locked --fail about.hbs -o target/THIRD-PARTY-LICENSES.html 2>&1; $status = $LASTEXITCODE; $skip = $false; $kept = foreach ($line in $log) { $text = if ($line -is [System.Management.Automation.ErrorRecord]) { $line.Exception.Message } else { "$line" }; if ($text -eq 'warning: config found for a crate not present in the graph') { $skip = $true } elseif ($skip -and $text -eq '') { $skip = $false } elseif (-not $skip) { $text } }; $kept | ForEach-Object { [Console]::Error.WriteLine($_) }; if ($status -ne 0 -or $kept) { exit 1 }
+
+# Each entry in about.toml for a crate the dependency graph doesn't hold, which `just notices`
+# lets through so a license can be accepted before its crate arrives, fails this once its crate is
+# gone. The weekly Advisories workflow runs it on `main`; remove such an entry in a rules pull
+# request.
+#
+# Checks that every crate about.toml names is in the dependency graph.
+stale-licenses:
+    #!/usr/bin/env bash
+    set -uo pipefail
+    log=$(cargo about --color never generate --locked --fail about.hbs -o /dev/null 2>&1)
+    status=$?
+    # Each warning names the entry's line in about.toml on the line after it.
+    lines=$(awk '$0 == "warning: config found for a crate not present in the graph" { found = 1; next }
+      found { if (match($0, /about\.toml:[0-9]+:/)) { print substr($0, RSTART + 11, RLENGTH - 12) } found = 0 }' <<< "$log")
+    count=$(grep --count --line-regexp --fixed-strings 'warning: config found for a crate not present in the graph' <<< "$log")
+    if [ "$count" -gt 0 ]; then
+      stale=$(for line in $lines; do sed -n "${line}p" about.toml; done | tr '\n' ' ' | sed 's/ $//')
+      echo "error: about.toml has $count entries for crates the dependency graph doesn't hold: ${stale:-see above}. Remove each in a rules pull request, unless the code pull request that adds its crate is still open; land that instead." >&2
+      echo "$log" >&2
+      exit 1
+    fi
+    if [ "$status" -ne 0 ]; then echo "$log" >&2; exit "$status"; fi
 
 # A pull request changes either the rules or the code, never both; see CONTRIBUTING.md. Compares
 # the working tree, staged, unstaged and untracked files included, with its merge base with

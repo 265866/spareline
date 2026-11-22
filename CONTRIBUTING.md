@@ -108,7 +108,10 @@ Then review the diff against the [review checklist](docs/style.md#checked-in-rev
 
 The Advisories workflow also runs `just deny` every week. A new advisory can fail a pull request
 that changed nothing; fix it with `cargo update -p <crate>`, or for the web UI
-`bun update <package>` in its directory, in its own pull request.
+`bun update <package>` in its directory, in its own pull request. It also runs
+`just stale-licenses`, which fails on an entry in `about.toml` for a crate the dependency graph
+doesn't hold. Unless the code pull request that adds that crate is still open, remove the entry,
+and its exception in `deny.toml`, in a rules pull request.
 
 ## Code
 
@@ -248,6 +251,15 @@ next, or add the rule together with an `expect` and a real reason at each place 
 proc-macro dependency is code: list the crate in `proc_macro_crates` in one pull request, then add
 the dependency and its first use in the next. Run `just rule-changes` to see how your changes
 sort: it counts the rule and code files, and lists both when a change mixes them.
+
+A dependency under a license that `deny.toml` and `about.toml` don't accept lands in two pull
+requests. First, in a rules pull request, accept the license for that crate alone, with the
+reason in a comment: an exception in `deny.toml`, such as `[[licenses.exceptions]]` with
+`crate = "webpki-roots"` and `allow = ["CDLA-Permissive-2.0"]`, and an entry in `about.toml`, such
+as `[webpki-roots]` with `accepted = ["CDLA-Permissive-2.0"]`. `just deny` and `just notices` pass
+with an entry for a crate the dependency graph doesn't hold yet. Then add the dependency in a code
+pull request. Accepting the license for every crate, in `allow` or `accepted`, lets any later
+dependency use it too, so do that only when the owner decides it.
 
 ## License
 
