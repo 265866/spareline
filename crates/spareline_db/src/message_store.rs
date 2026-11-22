@@ -45,7 +45,9 @@ impl MessageStore<'_> {
     ///
     /// # Errors
     ///
-    /// Fails when SQLite does; then nothing is stored.
+    /// Fails when SQLite does. A failure before the commit stores nothing; a failure reading the
+    /// stored rows back after it means they are stored but not returned, so clients get them by
+    /// paging with `after` rather than live.
     pub fn insert(
         &mut self,
         phone_id: i64,
@@ -131,7 +133,8 @@ impl MessageStore<'_> {
     ///
     /// # Errors
     ///
-    /// Fails when SQLite does; then nothing moves.
+    /// Fails when SQLite does. A failure before the commit moves nothing; a failure reading the
+    /// moved rows back after it means they moved but are not returned.
     pub fn attribute_pending(&mut self) -> Result<Vec<Message>, DatabaseError> {
         let transaction = self.connection.transaction()?;
         let mut moved = Vec::new();

@@ -2,6 +2,7 @@
 
 use std::fs::{self, File};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::{io, process};
 
 use spareline_core::Timestamp;
@@ -34,8 +35,9 @@ impl AttachmentStore {
     }
 
     /// Saves `bytes` under their SHA-256 unless a file of that name exists. The bytes go to
-    /// `<path>.<pid>.<now in ms>.tmp`, are synced, then renamed, so a crash or power cut never
-    /// leaves a partial file under the final name.
+    /// `<path>.<pid>.<now in ms>.<n>.tmp`, created new so two threads never share it, are synced,
+    /// then renamed, and the directory is synced, so a crash or power cut never leaves a partial
+    /// file under the final name or loses the rename. A failed write removes its temporary file.
     ///
     /// # Errors
     ///
@@ -51,17 +53,33 @@ impl AttachmentStore {
                 )
             })?;
             let temporary = PathBuf::from(format!(
-                "{}.{}.{}.tmp",
+                "{}.{}.{}.{}.tmp",
                 path.display(),
                 process::id(),
-                now.millis()
+                now.millis(),
+                NEXT_TEMPORARY.fetch_add(1, Ordering::Relaxed)
             ));
-            write_synced(&temporary, bytes).map_err(|source| {
-                DatabaseError::io(format!("cannot write {}", temporary.display()), source)
-            })?;
-            fs::rename(&temporary, &path).map_err(|source| {
-                DatabaseError::io(format!("cannot rename {}", temporary.display()), source)
-            })?;
+            let written =
+                write_synced(&temporary, bytes).and_then(|()| fs::rename(&temporary, &path));
+            if let Err(source) = written {
+                if let Err(cleanup) = fs::remove_file(&temporary)
+                    && cleanup.kind() != io::ErrorKind::NotFound
+                {
+                    return Err(DatabaseError::io(
+                        format!("cannot remove {}", temporary.display()),
+                        cleanup,
+                    ));
+                }
+                return Err(DatabaseError::io(
+                    format!("cannot write {}", temporary.display()),
+                    source,
+                ));
+            }
+            File::open(&self.directory)
+                .and_then(|directory| directory.sync_all())
+                .map_err(|source| {
+                    DatabaseError::io(format!("cannot sync {}", self.directory.display()), source)
+                })?;
         }
         Ok(SavedAttachment {
             sha256,
@@ -81,9 +99,12 @@ impl AttachmentStore {
     }
 }
 
+/// Tells apart the temporary files of saves that start in the same millisecond.
+static NEXT_TEMPORARY: AtomicU64 = AtomicU64::new(0);
+
 fn write_synced(path: &Path, bytes: &[u8]) -> io::Result<()> {
     use std::io::Write as _;
-    let mut file = File::create(path)?;
+    let mut file = File::options().write(true).create_new(true).open(path)?;
     file.write_all(bytes)?;
     file.sync_all()
 }

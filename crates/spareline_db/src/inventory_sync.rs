@@ -667,6 +667,60 @@ mod tests {
     }
 
     #[test]
+    fn a_numbers_count_and_last_text_come_from_its_texts() {
+        use crate::message::{NewMessage, Provider};
+
+        let mut database = new_database();
+        let phone = online(&mut database, B30, T0);
+        apply(&mut database, phone, &identity(), T0);
+        let long_body = "x".repeat(200);
+        let texts: Vec<NewMessage> = [(1, T1, "short"), (2, T2, long_body.as_str())]
+            .into_iter()
+            .map(|(provider_id, at, body)| NewMessage {
+                provider: Provider::Sms,
+                provider_id,
+                sub_id: Some(1),
+                sender: Some("550".to_owned()),
+                body: body.to_owned(),
+                subject: None,
+                sent_at: None,
+                received_at: test_clock::at(at),
+                attachments: Vec::new(),
+            })
+            .collect();
+        let stored = database
+            .messages()
+            .insert(phone, &texts, test_clock::at(T2))
+            .unwrap();
+        let numbers = database.inventory().list_numbers().unwrap();
+        assert_eq!(numbers.len(), 1, "{numbers:?}");
+        assert_eq!(numbers[0].message_count, 2);
+        let last = numbers[0].last_message.as_ref().expect("a last text");
+        assert_eq!(last.seq, stored[1].seq);
+        assert_eq!(
+            last.preview,
+            "x".repeat(160),
+            "the preview is the first 160 characters"
+        );
+        assert_eq!(last.received_at, T2);
+    }
+
+    #[test]
+    fn phones_are_listed_by_serial() {
+        let mut database = new_database();
+        online(&mut database, "SPARELINE00002", T0);
+        online(&mut database, B30, T1);
+        let serials: Vec<String> = database
+            .inventory()
+            .list_phones()
+            .unwrap()
+            .into_iter()
+            .map(|phone| phone.serial)
+            .collect();
+        assert_eq!(serials, ["SPARELINE00001", "SPARELINE00002"]);
+    }
+
+    #[test]
     fn phone_states_first_sight_needs_auth_online_transient_offline() {
         let mut database = new_database();
         let first = database
