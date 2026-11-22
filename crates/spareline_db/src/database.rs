@@ -9,6 +9,8 @@ use spareline_core::Timestamp;
 
 use crate::accounts::Accounts;
 use crate::database_error::DatabaseError;
+use crate::device_events::DeviceEvents;
+use crate::inventory::Inventory;
 use crate::migration::{AppliedMigration, MIGRATION_FILES, Migration};
 use crate::resolve;
 
@@ -99,6 +101,16 @@ impl Database {
     /// Users, sessions and API keys.
     pub fn accounts(&mut self) -> Accounts<'_> {
         Accounts::new(&mut self.connection)
+    }
+
+    /// Phones, SIMs, their placements, numbers and the edits people make to them.
+    pub fn inventory(&mut self) -> Inventory<'_> {
+        Inventory::new(&mut self.connection)
+    }
+
+    /// The device event log behind the event stream.
+    pub fn device_events(&mut self) -> DeviceEvents<'_> {
+        DeviceEvents::new(&mut self.connection)
     }
 }
 
