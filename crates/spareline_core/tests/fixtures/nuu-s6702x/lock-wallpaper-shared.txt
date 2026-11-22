@@ -1,0 +1,9 @@
+System wallpaper state:
+ User 0: id=2: mWhich=3: mSystemWasBoth=false
+  mName=
+  mWallpaperComponent=ComponentInfo{com.android.systemui/com.android.systemui.wallpapers.ImageWallpaper}
+Lock wallpaper state:
+Fallback wallpaper state:
+ User 0: id=1: mWhich=1: mSystemWasBoth=false
+  mName=
+  mWallpaperComponent=ComponentInfo{com.android.systemui/com.android.systemui.wallpapers.ImageWallpaper}

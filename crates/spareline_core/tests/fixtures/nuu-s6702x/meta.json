@@ -1,0 +1,16 @@
+{
+	"model": "S6702X",
+	"fingerprint": "NUU/S6702X1/S6702XA:14/UP1A.231005.007/1726207303:user/release-keys",
+	"capturedAt": "2026-10-22T06:25:47.391Z",
+	"note": "IMEIs, ICCIDs, IMSI prefixes, phone numbers, cell ids, SMS senders, SMS bodies, MMS subjects, and isms message ids are fake; everything else is verbatim.",
+	"smsCapturedAt": "2026-10-22T07:34:09.689Z",
+	"smsFiles": [
+		"isms.txt",
+		"sms-provider.txt",
+		"sms-keys.txt",
+		"mms-provider.txt",
+		"mms-keys.txt"
+	],
+	"lockScreenCapturedAt": "2026-11-18T02:31:00.000Z",
+	"lockScreenNote": "policy-read.txt's lock_screen_show_notifications line and wallpaper section, and lock-wallpaper-shared.txt, were recorded from this phone at lockScreenCapturedAt with the commands the policy runs; the rest of policy-read.txt is from capturedAt."
+}
