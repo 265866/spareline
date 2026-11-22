@@ -250,11 +250,84 @@ mod tests {
     use serde_json::Value;
     use spareline_adb::{AdbClient, Endpoint};
     use spareline_core::Timestamp;
+    use spareline_core::monitor::{MonitorEvent, ProvisionReport};
     use spareline_db::Database;
+    use tokio::runtime::Builder;
+    use tokio::task::JoinSet;
 
     use super::*;
     use crate::clock::Clock;
     use crate::fake_adb::{self, ScratchDir};
+    use crate::monitor::{Monitor, MonitorContext, MonitorSettings};
+
+    #[test]
+    fn concurrent_manager_and_monitor_writers_publish_device_events_in_the_order_they_committed() {
+        Builder::new_multi_thread()
+            .worker_threads(8)
+            .enable_all()
+            .build()
+            .unwrap()
+            .block_on(async {
+                let buses = Buses::new();
+                let mut published = buses.device_events();
+                let devices = Devices::new(
+                    AdbClient::new(Endpoint::new("127.0.0.1".to_owned(), 9)),
+                    Clock::system(),
+                );
+                let db = DbHandle::new(Database::open_in_memory(Timestamp::now).unwrap());
+                let context = ManagerContext {
+                    devices: devices.clone(),
+                    db: db.clone(),
+                    buses: buses.clone(),
+                    site: "home".to_owned(),
+                    log: EventLog::discard(),
+                    identity_retry: Vec::new(),
+                };
+                let monitor = Monitor::new(
+                    MonitorSettings::default(),
+                    MonitorContext {
+                        devices,
+                        db,
+                        buses,
+                        clock: Clock::system(),
+                        log: EventLog::discard(),
+                    },
+                );
+                let report = ProvisionReport::failed(Timestamp::now(), 0, "a stand-in run");
+                let mut writers = JoinSet::new();
+                for _ in 0..400 {
+                    let context = context.clone();
+                    writers.spawn(async move {
+                        let event = NewEvent::adb_reachable().unwrap();
+                        context.publish(vec![event]).await.unwrap();
+                    });
+                    let monitor = monitor.clone();
+                    let report = report.clone();
+                    writers.spawn(async move {
+                        monitor
+                            .publish("", &[MonitorEvent::Provision { report }])
+                            .await;
+                    });
+                }
+                while let Some(written) = writers.join_next().await {
+                    written.unwrap();
+                }
+                let mut ids = Vec::new();
+                let mut kinds = HashSet::new();
+                while let Ok(event) = published.try_recv() {
+                    ids.push(event.id);
+                    kinds.insert(event.kind);
+                }
+                let mut sorted = ids.clone();
+                sorted.sort_unstable();
+                assert_eq!(ids.len(), 800);
+                assert_eq!(kinds.len(), 2, "both writers published: {kinds:?}");
+                assert_eq!(
+                    ids, sorted,
+                    "a stream would drop every id published after a higher one"
+                );
+            });
+    }
 
     #[test]
     fn an_adb_change_the_database_refuses_leaves_the_table_as_it_was_and_records_on_the_next_try() {
