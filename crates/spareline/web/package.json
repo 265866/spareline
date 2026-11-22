@@ -3,11 +3,22 @@
     "private": true,
     "type": "module",
     "scripts": {
-        "build": "bun build ./index.html --outdir dist --minify",
-        "check": "tsc --noEmit"
+        "build": "bun scripts/build.ts",
+        "check": "tsc --noEmit && biome check --css-parse-tailwind-directives=true src scripts"
     },
     "devDependencies": {
+        "@biomejs/biome": "2.5.15",
         "@types/bun": "1.4.4",
+        "@types/react": "19.3.0",
+        "@types/react-dom": "19.3.0",
+        "@yume-chan/scrcpy": "2.3.0",
+        "@yume-chan/scrcpy-decoder-webcodecs": "2.5.3",
+        "@yume-chan/stream-extra": "2.6.1",
+        "bun-plugin-tailwind": "0.1.2",
+        "lucide-react": "1.61.0",
+        "react": "19.3.1",
+        "react-dom": "19.3.1",
+        "tailwindcss": "4.1.14",
         "typescript": "7.0.2"
     }
 }
