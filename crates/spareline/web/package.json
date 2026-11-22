@@ -4,7 +4,7 @@
     "type": "module",
     "scripts": {
         "build": "bun scripts/build.ts",
-        "check": "tsc --noEmit && biome check --css-parse-tailwind-directives=true src scripts"
+        "check": "tsc --noEmit && biome check --css-parse-tailwind-directives=true src scripts && bun test"
     },
     "devDependencies": {
         "@biomejs/biome": "2.5.15",
