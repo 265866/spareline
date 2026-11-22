@@ -166,7 +166,11 @@ Beyond the Google guide, the workspace also turns on:
   only on proc-macro crates listed in `proc_macro_crates`, since a proc macro writes code the custom
   lints don't check; that the root `AGENTS.md` is the only file of instructions for coding agents;
   that every crate's commits reach the release notes through `changelog_include` in
-  `release-plz.toml`; and that the docs keep the layout under [Documentation](#documentation).
+  `release-plz.toml`; that every shell script under `deploy/` passes shellcheck, with no
+  `.shellcheckrc` or `SHELLCHECK_OPTS` read, the files they source included, and that each
+  shellcheck directive there silences named codes, with a reason, as close above its finding as
+  shellcheck takes one, since a deploy kit is code no other check reads; and that the docs keep the
+  layout under [Documentation](#documentation).
 - `overflow-checks` and `panic = "abort"` in release builds: an overflow stops the program rather
   than wrapping, and nothing catches a panic. `trellis-policy` fails a change that turns either
   off, including a per-package or `.cargo/config.toml` override.
@@ -184,7 +188,8 @@ Beyond the Google guide, the workspace also turns on:
   so is a git submodule, whose files no check sees. A path that Windows reads as another path is
   a rule too: one with a part that ends in a dot or a space, that holds a `:` or a `\`, or that
   has the form of a short name. A web UI's
-  `package.json`, its scripts and its sources are code. A proc-macro dependency is code: a rules
+  `package.json`, its scripts and its sources are code, and so is a deploy kit under `deploy/`,
+  apart from the files that are rules by their names. A proc-macro dependency is code: a rules
   pull request lists the crate in `proc_macro_crates`, and a code pull request then adds the
   dependency with its first use, since `cargo shear` rejects a dependency nothing uses. A `.rs`
   change that only adds, removes or moves `expect` attributes is neither, so a new lint lands with

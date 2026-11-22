@@ -41,7 +41,8 @@ first, so a checkout of both there can hold one file, with the other's contents.
 
 Install [rustup](https://rustup.rs/), [cargo-binstall](https://github.com/cargo-bins/cargo-binstall),
 [uv](https://docs.astral.sh/uv/), [Go](https://go.dev/dl/) for actionlint, and
-[shellcheck](https://www.shellcheck.net/) 0.11.0, which actionlint runs on the workflows' scripts.
+[shellcheck](https://www.shellcheck.net/) 0.11.0, which actionlint runs on the workflows' scripts
+and `just policy` on a deploy kit's.
 Install [Bun](https://bun.com/) 1.4.4, the version CI and the image build the web UI with.
 Then install just, and use it to install the tools and toolchains the checks use:
 
@@ -61,7 +62,8 @@ own `node_modules/.bin` holds one. `bun run` looks there before the Bun you inst
 UI's scripts would run on that Bun instead. In a directory above, delete that `node_modules`. In
 the web UI's own, run `bun why bun`, which prints the packages that lead to `bun`. When a package
 asks for `bun` only as a peer, an older Bun wrote that into `bun.lock`, so delete `bun.lock` and
-`node_modules` and run `bun install` with the Bun you installed, which leaves that peer out. That
+`node_modules` and run `bun install --save-text-lockfile` with the Bun you installed, which leaves
+that peer out and writes `bun.lock` even when your Bun settings ask for the binary lockfile. That
 also moves every other package to the newest version its range allows, so read the lockfile's diff.
 When a package depends on `bun` outright, run `bun remove` with the name of the web UI's own
 dependency that leads to it, as `package.json` spells it. That name is `bun`, or its alias, when
@@ -261,6 +263,34 @@ as `[webpki-roots]` with `accepted = ["CDLA-Permissive-2.0"]`. `just deny` and `
 with an entry for a crate the dependency graph doesn't hold yet. Then add the dependency in a code
 pull request. Accepting the license for every crate, in `allow` or `accepted`, lets any later
 dependency use it too, so do that only when the owner decides it.
+
+A deploy kit, the scripts, container files and systemd units in `deploy/` that install and run the
+project on a host, is code too, like `crates/`. A kit change lands with the code change it needs,
+and review reads it as code. `just policy` runs shellcheck on each of its scripts, the files that
+end in `.sh`, `.bash`, `.dash`, `.ksh` or `.bats`, start with a `#!` line that names `sh`,
+`bash`, `dash`, `ksh`, `ash` or `bats`, or set their shell with a `# shellcheck shell=<shell>`
+line, and on the files they source, in a copy of `deploy/` alone, so a file outside the kit counts
+as missing. A library a script sources through a path shellcheck can't follow, with SC1090 or
+SC1091 silenced, is checked only if it is a script by itself, so give it a `.sh` name or a
+`shell=` line, and give every other script a `#!` line. `just policy` reads no `.shellcheckrc`
+and no `SHELLCHECK_OPTS`, and reports no finding in a host file a script sources, such as
+`/etc/os-release`. Silence a finding with `# shellcheck disable=SC<code> # <reason>` as close
+above it as shellcheck takes a directive. shellcheck applies a directive to the whole command
+below it, so `just policy` runs it again with every `disable` taken out and asks shellcheck
+whether a directive closer to each finding a directive hid would silence it alone. If one would,
+such as above a line in the function or block the directive sits over, or in the file a sourced
+line reads, the directive fails, though another directive for the code sits between. Where
+shellcheck takes no closer one, such as after a `|`, `&&` or `||`, inside `[[ ]]`, an array or a
+heredoc, above a `case` pattern or above the `done` that ends a loop, it passes, so a directive
+above a `case` covers its pattern lines, one-line bodies included. A file that sources a kit file
+by its absolute path in the checkout fails, since shellcheck would read the checkout, not the copy. It also fails a directive after
+code on its line or spelled with an unusual space, one that disables anything but codes, such as
+`all` or a range, or a parse check other than SC1090 and SC1091, one without a reason, `shell=` in
+a file with a `#!` line, `source=` or `source-path=` that leaves `deploy/`, any key but
+`disable`, `enable`, `shell`, `source` and `source-path`, and a symbolic link in `deploy/`. A file
+in `deploy/` that is a rule by its name stays a rule: a `justfile` or `*.just` module, an
+`action.yml`, `.gitignore`, `.ignore`, `bunfig.toml`, `.npmrc`, `build.rs`, TypeScript settings
+file, agent instruction file or tool configuration file, and a path Windows reads as another.
 
 ## License
 
