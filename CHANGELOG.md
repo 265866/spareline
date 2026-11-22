@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.1](https://github.com/265866/spareline/compare/v0.2.0...v0.2.1) - 2026-11-22
+
+### Other
+
+- *(deploy)* move the deploy kit into the spareline crate ([#35](https://github.com/265866/spareline/pull/35))
+
 ## [0.2.0](https://github.com/265866/spareline/releases/tag/v0.2.0) - 2026-11-22
 
 ### Added
