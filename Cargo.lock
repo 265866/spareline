@@ -866,6 +866,7 @@ version = "0.1.0"
 dependencies = [
  "axum",
  "futures-util",
+ "getrandom 0.4.3",
  "regex",
  "rusqlite",
  "serde",
@@ -876,6 +877,7 @@ dependencies = [
  "spareline_db",
  "thiserror",
  "tokio",
+ "tokio-tungstenite",
 ]
 
 [[package]]

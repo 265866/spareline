@@ -11,6 +11,7 @@ publish.workspace = true
 [dependencies]
 axum = { workspace = true, features = ["http1", "json", "query", "tokio", "ws"] }
 futures-util = { workspace = true, features = ["std"] }
+getrandom.workspace = true
 serde.workspace = true
 serde_json = { workspace = true, features = ["raw_value"] }
 spareline_adb = { path = "../spareline_adb" }
@@ -32,6 +33,7 @@ tokio = { workspace = true, features = [
     "test-util",
     "time",
 ] }
+tokio-tungstenite.workspace = true
 
 [lints]
 workspace = true
