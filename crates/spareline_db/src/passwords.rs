@@ -99,7 +99,8 @@ impl Passwords {
     /// # Errors
     ///
     /// Fails with [`AccountError::UnreadableHash`] when `hash` isn't an argon2id PHC string, or
-    /// names parameters argon2 refuses or costing more than four times Bun's.
+    /// names parameters argon2 refuses, more memory than Bun's 64 MiB, more than 8 passes or more
+    /// than 4 lanes.
     pub fn verify(password: &str, hash: &PasswordHash) -> Result<bool, AccountError> {
         let parsed = hash.parse().ok_or(AccountError::UnreadableHash)?;
         let cost = parsed.parameters;
@@ -182,15 +183,17 @@ impl Default for Passwords {
 /// as Bun's fixed worker pool made them wait.
 const MAX_CONCURRENT_HASHES: usize = 4;
 
-/// The largest cost a stored hash may name: four times Bun's, so a tampered row can't make one
-/// sign-in allocate gigabytes.
-const MAX_MEMORY_KIB: u32 = 4 * 65_536;
+/// The largest cost a stored hash may name. Memory is capped at Bun's 64 MiB, the only cost any
+/// writer of the database used, so the gate's four places stay within the container's memory
+/// even for a tampered row.
+const MAX_MEMORY_KIB: u32 = 65_536;
 const MAX_ITERATIONS: u32 = 8;
 const MAX_PARALLELISM: u32 = 4;
 
-/// A counting gate that lets at most [`MAX_CONCURRENT_HASHES`] argon2 runs through at once.
-#[derive(Debug, Default)]
+/// A counting gate that lets at most `limit` argon2 runs through at once.
+#[derive(Debug)]
 struct HashGate {
+    limit: usize,
     running: Mutex<usize>,
     freed: Condvar,
 }
@@ -201,20 +204,31 @@ struct HashPermit<'gate> {
 }
 
 impl HashGate {
-    fn global() -> &'static Self {
-        static GATE: OnceLock<HashGate> = OnceLock::new();
-        GATE.get_or_init(Self::default)
+    /// A gate of `limit` places.
+    fn new(limit: usize) -> Self {
+        Self {
+            limit,
+            running: Mutex::new(0),
+            freed: Condvar::new(),
+        }
     }
 
+    /// The process's gate: [`MAX_CONCURRENT_HASHES`] places, fewer on a machine with fewer CPUs.
+    fn global() -> &'static Self {
+        static GATE: OnceLock<HashGate> = OnceLock::new();
+        GATE.get_or_init(|| {
+            let cpus = thread::available_parallelism().map_or(1, usize::from);
+            Self::new(cpus.min(MAX_CONCURRENT_HASHES))
+        })
+    }
+
+    /// Waits for a place.
     fn enter(&self) -> HashPermit<'_> {
-        let limit = thread::available_parallelism()
-            .map_or(1, usize::from)
-            .min(MAX_CONCURRENT_HASHES);
         let mut running = self
             .running
             .lock()
             .expect("the hash gate's lock is never poisoned");
-        while *running >= limit {
+        while *running >= self.limit {
             running = self
                 .freed
                 .wait(running)
@@ -222,6 +236,26 @@ impl HashGate {
         }
         *running += 1;
         HashPermit { gate: self }
+    }
+
+    /// A place if one is free now, without waiting.
+    #[cfg_attr(
+        not(test),
+        expect(
+            dead_code,
+            reason = "the tests use it to prove the gate holds runs back"
+        )
+    )]
+    fn try_enter(&self) -> Option<HashPermit<'_>> {
+        let mut running = self
+            .running
+            .lock()
+            .expect("the hash gate's lock is never poisoned");
+        if *running >= self.limit {
+            return None;
+        }
+        *running += 1;
+        Some(HashPermit { gate: self })
     }
 }
 
@@ -331,31 +365,65 @@ mod tests {
     }
 
     #[test]
-    fn the_gate_holds_runs_beyond_its_limit_until_one_ends() {
-        use std::sync::mpsc;
-
-        let gate = Box::leak(Box::new(HashGate::default()));
-        let limit = thread::available_parallelism()
-            .map_or(1, usize::from)
-            .min(MAX_CONCURRENT_HASHES);
-        let held: Vec<HashPermit<'static>> = (0..limit).map(|_| gate.enter()).collect();
-        assert_eq!(*gate.running.lock().unwrap(), limit);
-        let (entered, entry) = mpsc::channel();
-        let shared: &'static HashGate = gate;
-        let late_run = thread::spawn(move || {
-            let _permit = shared.enter();
-            entered.send(()).unwrap();
-        });
-        drop(held);
-        entry
-            .recv()
-            .expect("a waiting run enters once a place frees");
-        late_run.join().unwrap();
+    fn the_gate_admits_no_more_than_its_limit_until_one_ends() {
+        let gate = HashGate::new(2);
+        let first = gate.enter();
+        let second = gate.try_enter().expect("a second place is free");
+        assert!(gate.try_enter().is_none(), "the gate is full at its limit");
+        drop(first);
+        let third = gate.try_enter().expect("a place frees when a run ends");
+        assert!(gate.try_enter().is_none());
+        drop(second);
+        drop(third);
         assert_eq!(
             *gate.running.lock().unwrap(),
             0,
             "every permit gives its place back"
         );
+    }
+
+    #[test]
+    fn a_waiting_run_enters_once_a_place_frees() {
+        use std::sync::mpsc;
+
+        let gate: &'static HashGate = Box::leak(Box::new(HashGate::new(1)));
+        let held = gate.enter();
+        let (entered, entry) = mpsc::channel();
+        let late_run = thread::spawn(move || {
+            let _permit = gate.enter();
+            entered.send(()).unwrap();
+        });
+        drop(held);
+        entry.recv().expect("the waiting run enters");
+        late_run.join().unwrap();
+    }
+
+    #[test]
+    fn hashing_holds_a_place_at_the_global_gate() {
+        use std::sync::mpsc;
+
+        let gate = HashGate::global();
+        let held: Vec<HashPermit<'static>> = (0..gate.limit).map(|_| gate.enter()).collect();
+        assert!(gate.try_enter().is_none(), "every place is held");
+        let (started, finished) = mpsc::channel();
+        let hashing = thread::spawn(move || {
+            started.send(()).unwrap();
+            Passwords::new().hash("a password").unwrap()
+        });
+        finished.recv().unwrap();
+        assert!(!hashing.is_finished(), "the hash waits for a place");
+        drop(held);
+        hashing.join().unwrap();
+    }
+
+    #[test]
+    fn a_hash_at_buns_cost_is_read_and_one_above_is_refused() {
+        let at_cap = "$argon2id$v=19$m=65536,t=8,p=4$c2FsdHNhbHRzYWx0c2FsdA$aGFzaGhhc2hoYXNoaGFzaGhhc2hoYXNoaGFzaGhhc2g";
+        assert!(Passwords::verify("x", &PasswordHash::from_stored(at_cap.to_owned())).is_ok());
+        let above = "$argon2id$v=19$m=65537,t=2,p=1$c2FsdHNhbHRzYWx0c2FsdA$aGFzaGhhc2hoYXNoaGFzaGhhc2hoYXNoaGFzaGhhc2g";
+        let error =
+            Passwords::verify("x", &PasswordHash::from_stored(above.to_owned())).unwrap_err();
+        assert!(matches!(error, AccountError::UnreadableHash));
     }
 
     #[test]

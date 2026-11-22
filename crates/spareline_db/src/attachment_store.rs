@@ -36,8 +36,9 @@ impl AttachmentStore {
 
     /// Saves `bytes` under their SHA-256 unless a file of that name exists. The bytes go to
     /// `<path>.<pid>.<now in ms>.<n>.tmp`, created new so two threads never share it, are synced,
-    /// then renamed, and the directory is synced, so a crash or power cut never leaves a partial
-    /// file under the final name or loses the rename. A failed write removes its temporary file.
+    /// then renamed, and the directory is synced, also when another save put the file there
+    /// first, so a crash or power cut never leaves a partial file under the final name or loses
+    /// a file a stored text points to. A failed write removes the temporary file it created.
     ///
     /// # Errors
     ///
@@ -46,12 +47,7 @@ impl AttachmentStore {
         let sha256 = token::sha256_hex(bytes);
         let path = self.directory.join(&sha256);
         if !path.exists() {
-            fs::create_dir_all(&self.directory).map_err(|source| {
-                DatabaseError::io(
-                    format!("cannot create {}", self.directory.display()),
-                    source,
-                )
-            })?;
+            self.create_directory()?;
             let temporary = PathBuf::from(format!(
                 "{}.{}.{}.{}.tmp",
                 path.display(),
@@ -59,32 +55,39 @@ impl AttachmentStore {
                 now.millis(),
                 NEXT_TEMPORARY.fetch_add(1, Ordering::Relaxed)
             ));
-            let written =
-                write_synced(&temporary, bytes).and_then(|()| fs::rename(&temporary, &path));
-            if let Err(source) = written {
-                if let Err(cleanup) = fs::remove_file(&temporary)
-                    && cleanup.kind() != io::ErrorKind::NotFound
-                {
-                    return Err(DatabaseError::io(
-                        format!("cannot remove {}", temporary.display()),
-                        cleanup,
-                    ));
-                }
-                return Err(DatabaseError::io(
-                    format!("cannot write {}", temporary.display()),
-                    source,
-                ));
-            }
-            File::open(&self.directory)
-                .and_then(|directory| directory.sync_all())
+            let file = File::options()
+                .write(true)
+                .create_new(true)
+                .open(&temporary)
                 .map_err(|source| {
-                    DatabaseError::io(format!("cannot sync {}", self.directory.display()), source)
+                    DatabaseError::io(format!("cannot create {}", temporary.display()), source)
                 })?;
+            write_synced(file, bytes).map_err(|source| failed("write", &temporary, source))?;
+            fs::rename(&temporary, &path).map_err(|source| failed("rename", &temporary, source))?;
         }
+        sync_directory(&self.directory)?;
         Ok(SavedAttachment {
             sha256,
             size: i64::try_from(bytes.len()).unwrap_or(i64::MAX),
         })
+    }
+
+    /// Creates the directory, and syncs its parent when it was missing, so the directory itself
+    /// survives a power cut.
+    fn create_directory(&self) -> Result<(), DatabaseError> {
+        if self.directory.is_dir() {
+            return Ok(());
+        }
+        fs::create_dir_all(&self.directory).map_err(|source| {
+            DatabaseError::io(
+                format!("cannot create {}", self.directory.display()),
+                source,
+            )
+        })?;
+        match self.directory.parent() {
+            Some(parent) => sync_directory(parent),
+            None => Ok(()),
+        }
     }
 
     /// The path of the part with `sha256`, or `None` when `sha256` isn't 64 lowercase hex
@@ -102,17 +105,68 @@ impl AttachmentStore {
 /// Tells apart the temporary files of saves that start in the same millisecond.
 static NEXT_TEMPORARY: AtomicU64 = AtomicU64::new(0);
 
-fn write_synced(path: &Path, bytes: &[u8]) -> io::Result<()> {
+fn write_synced(mut file: File, bytes: &[u8]) -> io::Result<()> {
     use std::io::Write as _;
-    let mut file = File::options().write(true).create_new(true).open(path)?;
     file.write_all(bytes)?;
     file.sync_all()
+}
+
+/// Syncs `directory`, so the entries created or renamed in it survive a power cut.
+fn sync_directory(directory: &Path) -> Result<(), DatabaseError> {
+    File::open(directory)
+        .and_then(|opened| opened.sync_all())
+        .map_err(|source| DatabaseError::io(format!("cannot sync {}", directory.display()), source))
+}
+
+/// The error for a failed write or rename of the temporary file at `temporary`, which this save
+/// created and now removes; a failed removal is named in the message too.
+fn failed(action: &str, temporary: &Path, source: io::Error) -> DatabaseError {
+    let context = match fs::remove_file(temporary) {
+        Ok(()) => format!("cannot {action} {}", temporary.display()),
+        Err(removal) => format!(
+            "cannot {action} {} (and cannot remove it: {removal})",
+            temporary.display()
+        ),
+    };
+    DatabaseError::io(context, source)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::test_dir::TestDir;
+
+    #[test]
+    fn threads_saving_the_same_bytes_at_once_all_succeed() {
+        use std::sync::{Arc, Barrier};
+        use std::thread;
+
+        for round in 0..5 {
+            let dir = TestDir::new();
+            let store = AttachmentStore::new(dir.path().join("attachments"));
+            let start = Arc::new(Barrier::new(16));
+            let savers: Vec<_> = (0..16)
+                .map(|_| {
+                    let store = store.clone();
+                    let start = Arc::clone(&start);
+                    thread::spawn(move || {
+                        start.wait();
+                        store.save(b"the same picture", Timestamp::from_millis(7))
+                    })
+                })
+                .collect();
+            for saver in savers {
+                saver
+                    .join()
+                    .unwrap()
+                    .unwrap_or_else(|error| panic!("round {round}: {error}"));
+            }
+            let names: Vec<_> = fs::read_dir(dir.path().join("attachments"))
+                .unwrap()
+                .collect();
+            assert_eq!(names.len(), 1, "round {round}: one file, no temporary left");
+        }
+    }
 
     #[test]
     fn saves_once_by_content() {

@@ -40,3 +40,23 @@ pub struct LoginCandidate {
     pub user: User,
     pub(crate) hash: PasswordHash,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_new_users_debug_output_hides_the_password() {
+        let new_user = NewUser {
+            user: User {
+                id: 1,
+                name: "alice".to_owned(),
+                created_at: "2026-10-21T00:00:00.000Z".to_owned(),
+            },
+            password: "Secret20CharsLongXyz".to_owned(),
+        };
+        let shown = format!("{new_user:?}");
+        assert!(!shown.contains("Secret20CharsLongXyz"), "{shown}");
+        assert!(shown.contains("alice"), "{shown}");
+    }
+}
