@@ -36,9 +36,9 @@ against recorded phone output.
 ## Decisions
 
 - **No new migrations.** The database keeps exactly the three migrations the Bun service wrote.
-  The rollback procedure of the installed deploy kit treats a database whose newest migration is
-  `003` as safe to hand back to the previous build, so a fourth migration would turn a rollback
-  into a restore from backup.
+  The builds before this one know only `001` to `003`, so a host can roll back to one of them and
+  keep the current database. A fourth migration would turn every rollback into a restore from a
+  snapshot taken before the update, losing what was stored since.
 - **Times as text in one form.** Every stored time is the 24-character form JavaScript's
   `toISOString` writes, such as `2026-10-28T08:41:51.104Z`, because queries compare and order the
   strings. `spareline_core::Timestamp` is the only way the code writes one.

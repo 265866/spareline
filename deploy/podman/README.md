@@ -10,7 +10,7 @@ These files run spareline as two rootless user services:
 - `spareline.service`: spareline, a rootless Podman quadlet from `localhost/spareline:current`.
   It gets no USB devices and reaches the adb server through `Network=pasta:-T,5037`, which
   forwards only port 5037 to the host's loopback. It publishes `127.0.0.1:8740`, runs read-only
-  as uid 10001 with every capability dropped, and is capped at 700 MB.
+  as uid 10001 with every capability dropped, and is capped at 700 MiB.
 
 Everything lives in `~/services/spareline/`: these scripts, `quadlet/`, `systemd/`, `app.env`
 (the service's settings), `data/` (the database), `logs/` and `backups/`.
@@ -74,7 +74,7 @@ podman login --authfile ~/.config/containers/auth.json ghcr.io
    | `spareline users list` | Lists the users |
    | `spareline users reset-password NAME` | Prints a new generated password once and ends every session |
    | `spareline users remove NAME` | Removes a user with their sessions and keys |
-   | `spareline keys add USER KEY_NAME read\|full` | Makes an API key for a user and prints it once. `read` allows `GET` requests only; `full` allows all but keys and passwords |
+   | `spareline keys add USER KEY_NAME read\|full` | Makes an API key for a user and prints it once. `read` allows `GET` requests only; `full` allows everything else except managing keys and passwords |
    | `spareline keys list` | Lists every key |
    | `spareline keys revoke ID` | Revokes a key, by the ID `keys list` prints |
 
@@ -95,12 +95,13 @@ podman login --authfile ~/.config/containers/auth.json ghcr.io
 
 | Variable | Default | Meaning |
 | --- | --- | --- |
-| `SITE` | `local` | A name for this host, stored on each phone it sees |
+| `SITE` | `local` | A name for this host, stored on each phone it sees. Set but empty, it stops the service from starting |
 | `POLICY_PROFILE` | none | The phone rules to check and enforce, such as `/app/profiles/no-data.json`. Without one, spareline checks no settings on the phones |
 | `POLICY_CHECK_INTERVAL_S` | `300` | Seconds between policy checks of each online phone, from 30 to 86400 |
 | `HEALTH_INTERVAL_S` | `60` | Seconds between health readings of each online phone, from 5 to 3600 |
 
-The image and the quadlet set `HOST`, `PORT`, `DATA_DIR` and `ADB_SERVER`; leave them alone.
+The image sets `HOST`, `PORT`, `DATA_DIR` and `SPARELINE_WEB_DIR`, and the quadlet sets
+`ADB_SERVER`; leave them alone.
 
 `deploy.env` changes how updates run. Copy `deploy.env.example` to `deploy.env` to set the image,
 a maintenance window or the smoke threshold.
@@ -127,8 +128,12 @@ When `UPSTREAM` is a new image, `update.sh` does these steps:
    or `:previous`.
 
 By default an update applies as soon as the hourly check finds it. To limit updates to a
-maintenance window, set `MAINTENANCE_HOUR` in `deploy.env`. `./update.sh --now` ignores the
-window.
+maintenance window, set `MAINTENANCE_HOUR` in `deploy.env`.
+`~/services/spareline/update.sh --now` ignores the window.
+
+To update the kit itself, copy this directory to the host again, as in step 1 of
+[Install](#install), and run `install.sh`. The copy replaces only the kit's own files, so `app.env`,
+`deploy.env`, `data/`, `logs/` and `backups/` stay as they are.
 
 ## Backups
 
@@ -137,6 +142,12 @@ with `spareline backup` (`VACUUM INTO`, then `PRAGMA integrity_check`) to `backu
 and a copy of `~/.android/adbkey`. It keeps seven snapshots. The adb key matters: without it,
 someone must tap "Allow USB debugging" on every phone again. Treat `backups/` as secret, and copy
 it off the host if the host's storage is the only copy.
+
+The snapshots hold the database only. The MMS attachments are files under `data/attachments/`,
+which no script copies, so copy that directory off the host along with `backups/`.
+
+Updates keep their three newest `preupdate-*.db` snapshots. Nothing removes `prerestore-*.db`
+snapshots, so delete them once you no longer need them.
 
 To restore a snapshot, run `restore.sh`. It saves the current database as
 `backups/prerestore-*.db` first:
