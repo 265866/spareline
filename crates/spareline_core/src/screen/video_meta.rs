@@ -32,7 +32,8 @@ pub struct VideoMetaError {
 
 impl VideoMeta {
     /// Reads the header: the NUL-padded device name, decoded as UTF-8 with replacement
-    /// characters and without a leading byte order mark, as `TextDecoder` decodes it, then the codec, width and height as big-endian `u32`s.
+    /// characters and without a leading byte order mark, as `TextDecoder` decodes it, then the
+    /// codec, width and height as big-endian `u32`s.
     ///
     /// # Errors
     ///

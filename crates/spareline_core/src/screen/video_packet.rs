@@ -21,10 +21,11 @@ pub struct PacketHeader {
 
 /// A header whose payload size is over [`MAX_PACKET_BYTES`].
 #[derive(Clone, Copy, Debug, PartialEq, Eq, thiserror::Error)]
-#[error("video packet of {size} bytes exceeds 8388608")]
+#[error("video packet of {size} bytes exceeds {max}")]
 #[must_use]
 pub struct PacketTooLarge {
     size: u32,
+    max: u32,
 }
 
 impl PacketHeader {
@@ -38,7 +39,10 @@ impl PacketHeader {
         let flags = header[0];
         let size = u32::from_be_bytes([header[8], header[9], header[10], header[11]]);
         if size > MAX_PACKET_BYTES {
-            return Err(PacketTooLarge { size });
+            return Err(PacketTooLarge {
+                size,
+                max: MAX_PACKET_BYTES,
+            });
         }
         Ok(Self {
             config: flags & 0x80 != 0,

@@ -11,6 +11,13 @@ use crate::screen::video_packet::PacketKind;
 /// one second of video at the relay's bit rate.
 pub const BACKLOG_LIMIT: usize = VIDEO_BIT_RATE as usize / 8;
 
+/// The most bytes a server may queue on one viewer's socket, whatever the packet. Config packets
+/// are sent past [`BACKLOG_LIMIT`], so this is the hard cap a broken or hostile encoder sending
+/// large config packets meets: a send that would queue past it is refused and reported with
+/// [`ViewerDelivery::send_dropped`], as Bun's 16 MiB WebSocket backpressure limit made the old
+/// relay drop it.
+pub const SOCKET_QUEUE_CAP: usize = 16 * 1024 * 1024;
+
 /// How long a viewer's keyframe request may go unanswered before it asks again.
 pub const KEYFRAME_RETRY: Duration = Duration::from_secs(2);
 
@@ -33,7 +40,8 @@ pub struct Delivery {
     pub needs_config: bool,
     /// Dropping until a keyframe, because frames after a gap cannot decode.
     pub waiting_for_keyframe: bool,
-    /// When this viewer last asked for a keyframe, if it is waiting on one it asked for.
+    /// When this viewer last asked for a keyframe, or last got a config packet, after which the
+    /// encoder's keyframe is due.
     pub keyframe_requested_at: Option<Timestamp>,
 }
 
@@ -143,8 +151,9 @@ impl ViewerDelivery {
         decision
     }
 
-    /// Records that the socket dropped a packet it was given: the viewer waits for a keyframe
-    /// again, and for a config packet too when the dropped one was a config packet.
+    /// Records that the socket dropped a packet it was given, or that the server refused one that
+    /// would have queued past [`SOCKET_QUEUE_CAP`]: the viewer waits for a keyframe again, and for
+    /// a config packet too when the dropped one was a config packet.
     pub fn send_dropped(&mut self, kind: PacketKind) {
         self.counts.dropped += 1;
         if kind == PacketKind::Config {

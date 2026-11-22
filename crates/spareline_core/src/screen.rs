@@ -17,7 +17,8 @@ pub use control_kind::{
     ControlKind, DISPLAY_POWER_OFF, MAX_TEXT_BYTES, MAX_VIEWER_MESSAGE_BYTES, RESET_VIDEO,
 };
 pub use delivery::{
-    BACKLOG_LIMIT, Decision, Delivery, KEYFRAME_RETRY, ViewerCounts, ViewerDelivery,
+    BACKLOG_LIMIT, Decision, Delivery, KEYFRAME_RETRY, SOCKET_QUEUE_CAP, ViewerCounts,
+    ViewerDelivery,
 };
 pub use keyframe_requests::{KeyframeRequest, KeyframeRequests, RESET_INTERVAL};
 pub use scid::Scid;
