@@ -40,10 +40,10 @@ export function LoginPage({
 				{noUsers && (
 					<p className="rounded-lg bg-amber-50 p-3 text-sm text-amber-900 dark:bg-amber-950/60 dark:text-amber-200">
 						Nobody can sign in yet. On the server, run{" "}
-						<code className="font-mono">bun src/cli.ts users add NAME</code> (in
-						the container:{" "}
+						<code className="font-mono">spareline users add NAME</code> (in the
+						container:{" "}
 						<code className="font-mono">
-							podman exec spareline bun src/cli.ts users add NAME
+							podman exec spareline spareline users add NAME
 						</code>
 						) and sign in with the password it prints.
 					</p>
