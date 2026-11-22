@@ -103,12 +103,28 @@ device_smoke() {
 # that is not loaded has no state to clear.
 reset_failed() { systemctl --user reset-failed "$SERVICE" 2>/dev/null || true; }
 
-link_units() {
-  local unit
-  mkdir -p "$HOME/.config/containers/systemd" "$HOME/.config/systemd/user"
+# Copies the services and timers into the user's unit directory as regular files, replacing an
+# older kit's links to them: `systemctl --user disable` deletes a linked unit's link along with its
+# enablement, so the unit is "not found" and can't be enabled again until the next install. Each
+# copy is written beside its target and renamed over it. A unit that was enabled, with a link in a
+# .wants directory, is reenabled so that link names the copy; nothing else is enabled, disabled,
+# started or stopped. The quadlet stays a link: its generator reads it, and nothing enables it.
+install_units() {
+  local unit name units=$HOME/.config/systemd/user tmp enabled=()
+  mkdir -p "$HOME/.config/containers/systemd" "$units"
   ln -sfn "$APP/quadlet/spareline.container" "$HOME/.config/containers/systemd/spareline.container"
-  for unit in "$APP/systemd/"*; do ln -sfn "$unit" "$HOME/.config/systemd/user/$(basename "$unit")"; done
+  for unit in "$APP/systemd/"*; do
+    name=${unit##*/}
+    if compgen -G "$units/*.wants/$name" >/dev/null; then enabled+=("$name"); fi
+    tmp=$(mktemp "$units/.$name.XXXXXX") || { fail "Could not write in $units."; return 1; }
+    if ! { cat "$unit" >"$tmp" && mv -fT "$tmp" "$units/$name"; }; then
+      rm -f "$tmp"
+      fail "Could not install $unit in $units."
+      return 1
+    fi
+  done
   run systemctl --user daemon-reload
+  if ((${#enabled[@]})); then run systemctl --user reenable "${enabled[@]}"; fi
 }
 
 wait_healthy() {

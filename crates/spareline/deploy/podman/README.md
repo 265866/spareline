@@ -51,10 +51,10 @@ podman login --authfile ~/.config/containers/auth.json ghcr.io
    ```
 
    `install.sh` is safe to rerun. It copies `app.env.example` to `app.env` if there is none,
-   pulls the image if there is no `:current` yet, links the units, starts the adb server, checks
-   that the image reaches it, starts spareline, waits for it to be healthy, and enables the
-   timers. No phone needs to be plugged in yet. The image it pulls, `:latest`, exists only once
-   this repository has published its first release.
+   pulls the image if there is no `:current` yet, copies the units into `~/.config/systemd/user`,
+   starts the adb server, checks that the image reaches it, starts spareline, waits for it to be
+   healthy, and enables the timers. No phone needs to be plugged in yet. The image it pulls,
+   `:latest`, exists only once this repository has published its first release.
 
 2. Plug in the phones with USB debugging on. Each one asks "Allow USB debugging?" for this host's
    new adb key: tick **Always allow from this computer** and tap **Allow**. Updates check the
@@ -131,6 +131,17 @@ When `UPSTREAM` is a new image, `update.sh` does these steps:
 By default an update applies as soon as the hourly check finds it. To limit updates to a
 maintenance window, set `MAINTENANCE_HOUR` in `deploy.env`.
 `~/services/spareline/update.sh --now` ignores the window.
+
+To turn updates off, and back on:
+
+```sh
+systemctl --user disable --now spareline-update.timer
+systemctl --user enable --now spareline-update.timer
+```
+
+While updates are off, `verify.sh` reports the update timer as inactive and fails. `install.sh`
+enables both timers, so rerunning it, as updating the kit below does, turns updates back on;
+disable the timer again afterwards to keep them off.
 
 To update the kit itself, copy this directory to the host again, as in step 1 of
 [Install](#install), and run `install.sh`. The copy replaces only the kit's own files, so `app.env`,
