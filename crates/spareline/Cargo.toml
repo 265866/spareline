@@ -13,7 +13,11 @@ name = "spareline"
 path = "src/main.rs"
 
 [dependencies]
+clap = { workspace = true, features = ["std", "help", "usage", "error-context"] }
+spareline_adb = { path = "../spareline_adb" }
 spareline_core = { path = "../spareline_core" }
+spareline_server = { path = "../spareline_server" }
+tokio = { workspace = true, features = ["rt", "net", "time", "io-util"] }
 
 [lints]
 workspace = true

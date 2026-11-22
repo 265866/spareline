@@ -1,0 +1,19 @@
+[package]
+name = "spareline_server"
+description = "The running spareline service: its HTTP API, phone manager, text ingest, monitor and screens"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+spareline_adb = { path = "../spareline_adb" }
+thiserror.workspace = true
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["io-util", "net", "rt", "time"] }
+
+[lints]
+workspace = true
