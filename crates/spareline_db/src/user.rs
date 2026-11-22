@@ -1,6 +1,7 @@
 //! People who can sign in.
 
 use crate::password_hash::PasswordHash;
+use std::fmt::{self, Debug, Formatter};
 
 /// A user, as the `users` table holds them.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -14,12 +15,21 @@ pub struct User {
 }
 
 /// A user just added, with the generated password, which is shown once and stored only hashed.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct NewUser {
     /// The user.
     pub user: User,
     /// The generated password.
     pub password: String,
+}
+
+impl Debug for NewUser {
+    /// Shows the user, never the generated password.
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        f.debug_struct("NewUser")
+            .field("user", &self.user)
+            .finish_non_exhaustive()
+    }
 }
 
 /// A user found by name for a sign-in, with the stored hash to check the password against

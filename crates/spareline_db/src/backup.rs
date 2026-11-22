@@ -281,9 +281,10 @@ fn absolute(path: &Path) -> Result<PathBuf, BackupError> {
     resolve::resolve(path).map_err(|error| file_system(&error, "uv_cwd", path))
 }
 
-/// Whether a failed `lstat` means nothing is there, as Node's `throwIfNoEntry: false` reads it.
+/// Whether a failed `lstat` means nothing is there. Only a missing entry counts: a parent that is
+/// a file fails as Node's `lstat` reported it, `ENOTDIR`.
 fn is_missing(error: &io::Error) -> bool {
-    error.kind() == io::ErrorKind::NotFound || error.kind() == io::ErrorKind::NotADirectory
+    error.kind() == io::ErrorKind::NotFound
 }
 
 fn file_system(error: &io::Error, syscall: &str, path: &Path) -> BackupError {
@@ -423,6 +424,35 @@ mod tests {
         assert!(
             message.starts_with("ENOENT: no such file or directory, mkdtemp '"),
             "{message}"
+        );
+    }
+
+    #[test]
+    fn a_destination_under_a_file_fails_as_nodes_lstat_did() {
+        let dir = TestDir::new();
+        let path = dir.path().join("spareline.db");
+        let _live = database_with_a_note(&path, "x");
+        let file = dir.path().join("a-file");
+        fs::write(&file, b"x").unwrap();
+        let under = file.join("x.db");
+        assert_eq!(
+            backup(&path, &under).unwrap_err().to_string(),
+            format!("ENOTDIR: not a directory, lstat '{}'", under.display())
+        );
+    }
+
+    #[test]
+    fn a_failed_backup_leaves_nothing_beside_the_destination() {
+        let dir = TestDir::new();
+        let junk = dir.path().join("junk.db");
+        fs::write(&junk, b"this is not a database file, just some bytes to make it long enough to have a header page").unwrap();
+        let out = dir.path().join("out");
+        fs::create_dir(&out).unwrap();
+        assert!(backup(&junk, &out.join("copy.db")).is_err());
+        let left: Vec<_> = fs::read_dir(&out).unwrap().collect();
+        assert!(
+            left.is_empty(),
+            "the temporary directory is removed: {left:?}"
         );
     }
 

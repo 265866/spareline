@@ -1,6 +1,7 @@
 //! Hashing, checking and generating passwords.
 
-use std::sync::OnceLock;
+use std::sync::{Condvar, Mutex, OnceLock};
+use std::thread;
 
 use argon2::{Algorithm, Argon2, Params, Version};
 
@@ -98,9 +99,16 @@ impl Passwords {
     /// # Errors
     ///
     /// Fails with [`AccountError::UnreadableHash`] when `hash` isn't an argon2id PHC string, or
-    /// names parameters argon2 refuses.
+    /// names parameters argon2 refuses or costing more than four times Bun's.
     pub fn verify(password: &str, hash: &PasswordHash) -> Result<bool, AccountError> {
         let parsed = hash.parse().ok_or(AccountError::UnreadableHash)?;
+        let cost = parsed.parameters;
+        if cost.memory_kib > MAX_MEMORY_KIB
+            || cost.iterations > MAX_ITERATIONS
+            || cost.parallelism > MAX_PARALLELISM
+        {
+            return Err(AccountError::UnreadableHash);
+        }
         let mut computed = vec![0_u8; parsed.hash.len()];
         argon2(
             parsed.version,
@@ -169,7 +177,68 @@ impl Default for Passwords {
     }
 }
 
-/// Runs argon2id over `password` and `salt` into `out`.
+/// The most argon2 runs at once in the process. Each takes 64 MiB, and the container is capped at
+/// 700 MiB, so a burst of sign-ins with different names waits here rather than exhausting it,
+/// as Bun's fixed worker pool made them wait.
+const MAX_CONCURRENT_HASHES: usize = 4;
+
+/// The largest cost a stored hash may name: four times Bun's, so a tampered row can't make one
+/// sign-in allocate gigabytes.
+const MAX_MEMORY_KIB: u32 = 4 * 65_536;
+const MAX_ITERATIONS: u32 = 8;
+const MAX_PARALLELISM: u32 = 4;
+
+/// A counting gate that lets at most [`MAX_CONCURRENT_HASHES`] argon2 runs through at once.
+#[derive(Debug, Default)]
+struct HashGate {
+    running: Mutex<usize>,
+    freed: Condvar,
+}
+
+/// Holds one of the gate's places until dropped.
+struct HashPermit<'gate> {
+    gate: &'gate HashGate,
+}
+
+impl HashGate {
+    fn global() -> &'static Self {
+        static GATE: OnceLock<HashGate> = OnceLock::new();
+        GATE.get_or_init(Self::default)
+    }
+
+    fn enter(&self) -> HashPermit<'_> {
+        let limit = thread::available_parallelism()
+            .map_or(1, usize::from)
+            .min(MAX_CONCURRENT_HASHES);
+        let mut running = self
+            .running
+            .lock()
+            .expect("the hash gate's lock is never poisoned");
+        while *running >= limit {
+            running = self
+                .freed
+                .wait(running)
+                .expect("the hash gate's lock is never poisoned");
+        }
+        *running += 1;
+        HashPermit { gate: self }
+    }
+}
+
+impl Drop for HashPermit<'_> {
+    fn drop(&mut self) {
+        let mut running = self
+            .gate
+            .running
+            .lock()
+            .expect("the hash gate's lock is never poisoned");
+        *running -= 1;
+        self.gate.freed.notify_one();
+    }
+}
+
+/// Runs argon2id over `password` and `salt` into `out`, waiting for a place at the
+/// [`HashGate`].
 fn argon2(
     version: Version,
     parameters: Parameters,
@@ -187,6 +256,7 @@ fn argon2(
     .map_err(|error| AccountError::Hashing {
         message: error.to_string(),
     })?;
+    let _permit = HashGate::global().enter();
     Argon2::new(Algorithm::Argon2id, version, params)
         .hash_password_into(password.as_bytes(), salt, out)
         .map_err(|error| AccountError::Hashing {
@@ -250,6 +320,42 @@ mod tests {
             "six emoji are 12 UTF-16 units"
         );
         assert!(passwords.hash_new(&"\u{e9}".repeat(11)).is_err());
+    }
+
+    #[test]
+    fn a_hash_naming_a_huge_cost_is_refused_without_running_it() {
+        let stored = "$argon2id$v=19$m=4194304,t=2,p=1$c2FsdHNhbHRzYWx0c2FsdA$aGFzaGhhc2hoYXNoaGFzaGhhc2hoYXNoaGFzaGhhc2g";
+        let error =
+            Passwords::verify("x", &PasswordHash::from_stored(stored.to_owned())).unwrap_err();
+        assert!(matches!(error, AccountError::UnreadableHash));
+    }
+
+    #[test]
+    fn the_gate_holds_runs_beyond_its_limit_until_one_ends() {
+        use std::sync::mpsc;
+
+        let gate = Box::leak(Box::new(HashGate::default()));
+        let limit = thread::available_parallelism()
+            .map_or(1, usize::from)
+            .min(MAX_CONCURRENT_HASHES);
+        let held: Vec<HashPermit<'static>> = (0..limit).map(|_| gate.enter()).collect();
+        assert_eq!(*gate.running.lock().unwrap(), limit);
+        let (entered, entry) = mpsc::channel();
+        let shared: &'static HashGate = gate;
+        let late_run = thread::spawn(move || {
+            let _permit = shared.enter();
+            entered.send(()).unwrap();
+        });
+        drop(held);
+        entry
+            .recv()
+            .expect("a waiting run enters once a place frees");
+        late_run.join().unwrap();
+        assert_eq!(
+            *gate.running.lock().unwrap(),
+            0,
+            "every permit gives its place back"
+        );
     }
 
     #[test]

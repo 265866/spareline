@@ -1,5 +1,7 @@
 //! API keys for scripts, as the API shows them.
 
+use std::fmt::{self, Debug, Formatter};
+
 use rusqlite::ToSql;
 use rusqlite::types::{FromSql, FromSqlError, FromSqlResult, ToSqlOutput, ValueRef};
 use serde::Serialize;
@@ -73,11 +75,20 @@ pub struct ApiKeyView {
 
 /// A key just made, as `POST /api/v1/api-keys` answers: `{"key": "sl_...", "apiKey": {...}}`.
 /// The key itself is shown once; the database keeps only its SHA-256.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[derive(Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct NewApiKey {
     /// The key.
     pub key: String,
     /// How it is listed.
     pub api_key: ApiKeyView,
+}
+
+impl Debug for NewApiKey {
+    /// Shows how the key is listed, never the key.
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        f.debug_struct("NewApiKey")
+            .field("api_key", &self.api_key)
+            .finish_non_exhaustive()
+    }
 }
