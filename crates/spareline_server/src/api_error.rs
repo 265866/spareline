@@ -87,3 +87,35 @@ impl IntoResponse for ApiError {
         (self.status, Json(body)).into_response()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use axum::body::{self, Body};
+    use axum::http::header;
+    use tokio::runtime::Builder;
+
+    use super::*;
+
+    fn block_on<F: Future>(future: F) -> F::Output {
+        Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap()
+            .block_on(future)
+    }
+
+    #[test]
+    fn errors_answer_with_a_json_error_body() {
+        block_on(async {
+            let response = ApiError::conflict("taken".to_owned()).into_response();
+            assert_eq!(response.status(), StatusCode::CONFLICT);
+            assert_eq!(
+                response.headers()[header::CONTENT_TYPE].to_str().unwrap(),
+                "application/json"
+            );
+            let body: Body = response.into_body();
+            let bytes = body::to_bytes(body, usize::MAX).await.unwrap();
+            assert_eq!(bytes.as_ref(), br#"{"error":"taken"}"#);
+        });
+    }
+}

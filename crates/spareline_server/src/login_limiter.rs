@@ -59,15 +59,32 @@ impl LoginLimiter {
     /// pass [`LoginLimiter::retry_after`] first.
     pub fn fail(&mut self, keys: &[String], now: Timestamp) {
         if self.failures.len() > SWEEP_ABOVE {
-            let names: Vec<String> = self.failures.keys().cloned().collect();
-            for name in names {
-                self.recent(&name, now);
-            }
+            let cutoff = now.minus(WINDOW);
+            self.failures.retain(|_, times| {
+                times.retain(|&at| at > cutoff);
+                !times.is_empty()
+            });
         }
         for key in keys {
             self.recent(key, now);
             self.failures.entry(key.clone()).or_default().push(now);
         }
+    }
+
+    /// Starts a password check for `keys` at `now`: refuses it with the seconds to wait when any
+    /// key is over the limit, and otherwise records it as a failure until
+    /// [`LoginLimiter::succeed`] clears it. Checking and recording in one step means concurrent
+    /// attempts can't all pass the check before any is recorded.
+    ///
+    /// # Errors
+    ///
+    /// The whole seconds to wait.
+    pub fn begin(&mut self, keys: &[String], now: Timestamp) -> Result<(), u64> {
+        if let Some(wait) = self.retry_after(keys, now) {
+            return Err(wait);
+        }
+        self.fail(keys, now);
+        Ok(())
     }
 
     /// Forgets every failure of `keys`.
@@ -144,6 +161,43 @@ mod tests {
         }
         limiter.succeed(&keys);
         assert_eq!(limiter.retry_after(&keys, at(10)), None);
+    }
+
+    #[test]
+    fn begin_checks_and_records_in_one_step() {
+        let mut limiter = LoginLimiter::new();
+        let keys = vec![LoginLimiter::key_for("dave")];
+        for second in 0..10 {
+            assert_eq!(
+                limiter.begin(&keys, at(second)),
+                Ok(()),
+                "attempt {}",
+                second + 1
+            );
+        }
+        assert_eq!(limiter.begin(&keys, at(10)), Err(15 * 60 - 10));
+    }
+
+    #[test]
+    fn a_name_over_the_limit_blocks_a_request_naming_several() {
+        let mut limiter = LoginLimiter::new();
+        let alice = vec![LoginLimiter::key_for("alice")];
+        for second in 0..10 {
+            limiter.fail(&alice, at(second));
+        }
+        let both = vec![LoginLimiter::key_for("bob"), LoginLimiter::key_for("alice")];
+        assert!(limiter.retry_after(&both, at(10)).is_some());
+    }
+
+    #[test]
+    fn past_ten_thousand_names_a_failure_sweeps_out_expired_ones() {
+        let mut limiter = LoginLimiter::new();
+        for index in 0..=SWEEP_ABOVE {
+            limiter.fail(&[format!("name:user{index}")], at(0));
+        }
+        assert_eq!(limiter.failures.len(), SWEEP_ABOVE + 1);
+        limiter.fail(&[LoginLimiter::key_for("late")], at(15 * 60 + 1));
+        assert_eq!(limiter.failures.len(), 1, "only the fresh failure is left");
     }
 
     #[test]

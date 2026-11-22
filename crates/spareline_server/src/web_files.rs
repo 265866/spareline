@@ -31,6 +31,9 @@ impl WebFiles {
         let Some(path) = self.asset_path(rest) else {
             return not_found_text();
         };
+        if !self.resolves_inside_assets(&path).await {
+            return not_found_text();
+        }
         match read_file(&path).await {
             Ok(Some(bytes)) => {
                 let content_type = content_type_of(&path);
@@ -75,6 +78,17 @@ impl WebFiles {
                 "The web UI is not built. Run `just web-build`.",
             )
                 .into_response(),
+        }
+    }
+
+    /// Whether `path`, with every symbolic link followed, is still under `assets/`, so a link in
+    /// the build can't serve a file from elsewhere.
+    async fn resolves_inside_assets(&self, path: &Path) -> bool {
+        let assets = fs::canonicalize(self.root.join("assets")).await;
+        let resolved = fs::canonicalize(path).await;
+        match (assets, resolved) {
+            (Ok(assets), Ok(resolved)) => resolved.starts_with(assets),
+            (Err(_) | Ok(_), Err(_)) | (Err(_), Ok(_)) => false,
         }
     }
 
@@ -140,10 +154,11 @@ fn not_found_text() -> Response {
 
 #[cfg(test)]
 mod tests {
+    use std::os::unix::fs as unix_fs;
     use std::sync::atomic::{AtomicU64, Ordering};
     use std::{env, fs as std_fs, process};
 
-    use axum::body::{self, Body};
+    use axum::body;
     use axum::http::HeaderName;
     use tokio::runtime::Builder;
 
@@ -252,6 +267,30 @@ mod tests {
     }
 
     #[test]
+    fn names_that_could_leave_the_assets_have_no_path() {
+        let files = WebFiles::new(PathBuf::from("/web"));
+        for rest in ["", "a\\b", "x\0y", "./x", "../x", "/x", "x/../y"] {
+            assert_eq!(files.asset_path(rest), None, "{rest:?}");
+        }
+        assert_eq!(
+            files.asset_path("x/y.js"),
+            Some(PathBuf::from("/web/assets/x/y.js"))
+        );
+    }
+
+    #[test]
+    fn a_link_out_of_the_assets_is_not_followed() {
+        block_on(async {
+            let built = built(Index::Built);
+            let link = built.directory.join("web/assets/leak.txt");
+            unix_fs::symlink(built.directory.join("secret.txt"), &link).unwrap();
+            let response = built.files.asset("leak.txt").await;
+            assert_eq!(response.status(), StatusCode::NOT_FOUND);
+            assert_eq!(text(response).await, "not found");
+        });
+    }
+
+    #[test]
     fn answers_every_page_with_the_index() {
         block_on(async {
             let built = built(Index::Built);
@@ -288,21 +327,6 @@ mod tests {
                 text(response).await,
                 "The web UI is not built. Run `just web-build`."
             );
-        });
-    }
-
-    #[test]
-    fn errors_answer_with_a_json_error_body() {
-        block_on(async {
-            let response = ApiError::conflict("taken".to_owned()).into_response();
-            assert_eq!(response.status(), StatusCode::CONFLICT);
-            assert_eq!(
-                header_of(&response, header::CONTENT_TYPE),
-                "application/json"
-            );
-            let body: Body = response.into_body();
-            let bytes = body::to_bytes(body, usize::MAX).await.unwrap();
-            assert_eq!(bytes.as_ref(), br#"{"error":"taken"}"#);
         });
     }
 }

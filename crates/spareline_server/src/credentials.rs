@@ -34,13 +34,19 @@ pub enum Credentials {
 }
 
 impl Credentials {
-    /// Reads the credentials from the request's headers.
+    /// Reads the credentials from the request's headers as spareline-old's guard did: every
+    /// `Authorization` header joined with `, ` and read byte for byte, so a key with non-ASCII
+    /// text is still a key, an invalid one, and the cookie is ignored; anything that isn't
+    /// `Bearer <token>` falls back to the cookie.
     #[must_use]
     pub fn from_headers(headers: &HeaderMap) -> Self {
-        if let Some(key) = headers
-            .get(header::AUTHORIZATION)
-            .and_then(|value| value.to_str().ok())
-            .and_then(bearer)
+        let joined: Vec<String> = headers
+            .get_all(header::AUTHORIZATION)
+            .iter()
+            .map(|value| value.as_bytes().iter().copied().map(char::from).collect())
+            .collect();
+        if !joined.is_empty()
+            && let Some(key) = bearer(&joined.join(", "))
         {
             return Self::Key(key.to_owned());
         }
@@ -62,19 +68,17 @@ fn bearer(value: &str) -> Option<&str> {
     (!token.is_empty() && !token.contains(char::is_whitespace)).then_some(token)
 }
 
-/// The value of the first `spareline_session` cookie, from every `Cookie` header.
+/// The value of the first `spareline_session` cookie, from every `Cookie` header. Headers are
+/// split as bytes, so another cookie holding non-ASCII text doesn't hide the session.
 fn session_token(headers: &HeaderMap) -> Option<String> {
-    let cookies = headers
-        .get_all(header::COOKIE)
-        .iter()
-        .filter_map(|value| value.to_str().ok());
-    for cookie in cookies {
-        for part in cookie.split(';') {
-            let Some((name, value)) = part.split_once('=') else {
+    for cookie in headers.get_all(header::COOKIE) {
+        for part in cookie.as_bytes().split(|&byte| byte == b';') {
+            let Some(equals) = part.iter().position(|&byte| byte == b'=') else {
                 continue;
             };
-            if !name.is_empty() && name.trim() == SESSION_COOKIE {
-                return Some(value.trim().to_owned());
+            let (name, value) = (&part[..equals], &part[equals + 1..]);
+            if name.trim_ascii() == SESSION_COOKIE.as_bytes() {
+                return Some(String::from_utf8_lossy(value.trim_ascii()).into_owned());
             }
         }
     }
@@ -176,6 +180,45 @@ mod tests {
                 "{value}"
             );
         }
+    }
+
+    #[test]
+    fn a_non_ascii_cookie_does_not_hide_the_session() {
+        let mut map = HeaderMap::new();
+        map.append(
+            header::COOKIE,
+            HeaderValue::from_bytes(b"other=\xe2\x9c\x93; spareline_session=tok").unwrap(),
+        );
+        assert_eq!(
+            Credentials::from_headers(&map),
+            Credentials::Session("tok".to_owned())
+        );
+    }
+
+    #[test]
+    fn a_non_ascii_bearer_is_still_a_key_and_ignores_the_cookie() {
+        let mut map = headers(&[["cookie", "spareline_session=tok"]]);
+        map.append(
+            header::AUTHORIZATION,
+            HeaderValue::from_bytes(b"Bearer sl_\xc3\xa9").unwrap(),
+        );
+        assert_eq!(
+            Credentials::from_headers(&map),
+            Credentials::Key("sl_\u{c3}\u{a9}".to_owned())
+        );
+    }
+
+    #[test]
+    fn two_authorization_headers_read_as_one_and_fall_back_to_the_cookie() {
+        let twice = headers(&[
+            ["authorization", "Bearer a"],
+            ["authorization", "Bearer b"],
+            ["cookie", "spareline_session=tok"],
+        ]);
+        assert_eq!(
+            Credentials::from_headers(&twice),
+            Credentials::Session("tok".to_owned())
+        );
     }
 
     #[test]
