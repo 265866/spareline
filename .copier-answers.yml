@@ -4,7 +4,7 @@ _src_path: https://github.com/265866/trellis.git
 architectures:
 - x86_64
 - aarch64
-author: Colton
+author: '265866'
 description: Spare phone lines on spare phones, with an inbox for each line.
 github_owner: '265866'
 image:
