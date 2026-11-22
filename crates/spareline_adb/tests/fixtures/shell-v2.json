@@ -1,0 +1,29 @@
+{
+	"description": "shell,v2 with stdout, stderr, and exit code 3",
+	"recordedAt": "2026-10-22T06:23:15.291Z",
+	"outcome": "ok: {\"stdout\":\"S6702X\\n\",\"stderr\":\"oops\\n\",\"exitCode\":3}",
+	"connections": [
+		[
+			{
+				"from": "client",
+				"hex": "30303164686f73743a7472616e73706f72743a53504152454c494e453030303031"
+			},
+			{
+				"from": "server",
+				"hex": "4f4b4159"
+			},
+			{
+				"from": "client",
+				"hex": "303033637368656c6c2c76322c7261773a67657470726f7020726f2e70726f647563742e6d6f64656c3b206563686f206f6f7073203e26323b20657869742033"
+			},
+			{
+				"from": "server",
+				"hex": "4f4b4159"
+			},
+			{
+				"from": "server",
+				"hex": "01070000005336373032580a02050000006f6f70730a030100000003"
+			}
+		]
+	]
+}

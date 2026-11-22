@@ -1,0 +1,33 @@
+{
+	"description": "tcp: duplex stream to a loopback-only echo server on the phone",
+	"recordedAt": "2026-10-22T06:23:17.093Z",
+	"outcome": "ok: \"hello spareline\"",
+	"connections": [
+		[
+			{
+				"from": "client",
+				"hex": "30303164686f73743a7472616e73706f72743a53504152454c494e453030303031"
+			},
+			{
+				"from": "server",
+				"hex": "4f4b4159"
+			},
+			{
+				"from": "client",
+				"hex": "303030397463703a3237313833"
+			},
+			{
+				"from": "server",
+				"hex": "4f4b4159"
+			},
+			{
+				"from": "client",
+				"hex": "68656c6c6f2073706172656c696e65"
+			},
+			{
+				"from": "server",
+				"hex": "68656c6c6f2073706172656c696e65"
+			}
+		]
+	]
+}
