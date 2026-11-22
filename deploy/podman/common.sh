@@ -25,7 +25,7 @@ MAINTENANCE_HOUR=
 MAINTENANCE_TZ=
 SMOKE_MIN_PHONES=1
 # deploy.env may override these and UPSTREAM (for example to test a branch image).
-# shellcheck source=/dev/null
+# shellcheck disable=SC1091 # deploy.env is the host's own settings, written there and not part of the kit.
 if [[ -f "$APP/deploy.env" ]]; then source "$APP/deploy.env"; fi
 [[ -z "$MAINTENANCE_HOUR" || "$MAINTENANCE_HOUR" =~ ^([01]?[0-9]|2[0-3])$ ]] ||
   { printf 'MAINTENANCE_HOUR must be an hour from 0 to 23, not "%s"\n' "$MAINTENANCE_HOUR" >&2; exit 1; }
