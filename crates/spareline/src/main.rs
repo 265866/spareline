@@ -1,15 +1,16 @@
 //! `spareline`: Spare phone lines on spare phones, with an inbox for each line.
 
 use std::env;
+use std::ffi::OsString;
 use std::io::{self, Write};
 use std::process::ExitCode;
 
 use clap::{Arg, ArgAction, ArgMatches, Command};
 use spareline_adb::AdbClient;
-use spareline_server::Config;
 use spareline_server::healthcheck::Healthcheck;
 use spareline_server::smoke::Smoke;
-use tokio::runtime::Builder;
+use spareline_server::{Config, SmokeSettings};
+use tokio::runtime::{Builder, Runtime};
 
 /// The command line, built with clap's builder API as `docs/style.md` asks.
 fn command() -> Command {
@@ -22,11 +23,7 @@ fn command() -> Command {
                 .action(ArgAction::SetTrue)
                 .help("Print the version line and exit"),
         )
-        .after_help(
-            "Without a command, it runs the service, configured by the environment. The users \
-             and keys commands open the database in DATA_DIR (default: data), like the service, \
-             which may keep running.",
-        )
+        .after_help("Without a command, it runs the service, configured by the environment.")
         .subcommand(Command::new("smoke").about(
             "Exit 0 if the adb server answers, every online phone answers a read-only getprop, \
              and at least SMOKE_MIN_PHONES (default 1) are online",
@@ -34,6 +31,33 @@ fn command() -> Command {
         .subcommand(Command::new("healthcheck").about(
             "Exit 0 if the service on 127.0.0.1:PORT answers /healthz with a 2xx, 1 otherwise",
         ))
+}
+
+/// What the command line asks for.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Invocation {
+    /// `--version`.
+    Version,
+    /// `smoke`.
+    Smoke,
+    /// `healthcheck`.
+    Healthcheck,
+    /// No command: run the service.
+    Service,
+}
+
+impl Invocation {
+    /// Reads the parsed command line.
+    fn from_matches(matches: &ArgMatches) -> Self {
+        if matches.get_flag("version") {
+            return Self::Version;
+        }
+        match matches.subcommand_name() {
+            Some("smoke") => Self::Smoke,
+            Some("healthcheck") => Self::Healthcheck,
+            Some(_) | None => Self::Service,
+        }
+    }
 }
 
 fn main() -> io::Result<ExitCode> {
@@ -45,38 +69,30 @@ fn main() -> io::Result<ExitCode> {
             return Ok(ExitCode::from(code));
         }
     };
-    if matches.get_flag("version") {
-        writeln!(io::stdout().lock(), "{}", spareline_core::version_line())?;
-        return Ok(ExitCode::SUCCESS);
-    }
-    match matches.subcommand() {
-        Some(("smoke", _)) => run_smoke(),
-        Some(("healthcheck", _)) => run_healthcheck(),
-        Some((name, _)) => unknown(name),
-        None => run_service(&matches),
+    match Invocation::from_matches(&matches) {
+        Invocation::Version => {
+            writeln!(io::stdout().lock(), "{}", spareline_core::version_line())?;
+            Ok(ExitCode::SUCCESS)
+        }
+        Invocation::Smoke => run_smoke(&Builder::new_multi_thread().enable_all().build()?),
+        Invocation::Healthcheck => run_healthcheck(),
+        Invocation::Service => run_service(),
     }
 }
 
-/// Reads the environment through the process's variables.
-fn environment(name: &str) -> Option<String> {
-    env::var(name).ok()
+/// Reads one variable of the process's environment.
+fn environment(name: &str) -> Option<OsString> {
+    env::var_os(name)
 }
 
-fn run_smoke() -> io::Result<ExitCode> {
-    let outcome = Config::from_env(environment)
-        .and_then(|config| {
-            spareline_server::smoke_min_phones(environment).map(|minimum| (config, minimum))
-        })
+fn run_smoke(runtime: &Runtime) -> io::Result<ExitCode> {
+    let outcome = SmokeSettings::from_env(environment)
         .map_err(|error| error.to_string())
-        .and_then(|(config, minimum)| {
-            let runtime = Builder::new_current_thread()
-                .enable_all()
-                .build()
-                .map_err(|error| error.to_string())?;
-            let adb = AdbClient::new(config.adb_server);
+        .and_then(|settings| {
+            let adb = AdbClient::new(settings.config.adb_server);
             let mut stdout = io::stdout().lock();
             runtime
-                .block_on(Smoke::new(&adb, minimum).run(&mut stdout))
+                .block_on(Smoke::new(&adb, settings.min_phones).run(&mut stdout))
                 .map_err(|error| error.to_string())
         });
     match outcome {
@@ -105,13 +121,8 @@ fn run_healthcheck() -> io::Result<ExitCode> {
     }
 }
 
-fn unknown(name: &str) -> io::Result<ExitCode> {
-    writeln!(io::stderr().lock(), "unknown command {name}")?;
-    Ok(ExitCode::from(2))
-}
-
 /// Runs the service, which so far only prints its version line.
-fn run_service(_matches: &ArgMatches) -> io::Result<ExitCode> {
+fn run_service() -> io::Result<ExitCode> {
     writeln!(io::stdout().lock(), "{}", spareline_core::version_line())?;
     Ok(ExitCode::SUCCESS)
 }

@@ -13,7 +13,7 @@ spareline_adb = { path = "../spareline_adb" }
 thiserror.workspace = true
 
 [dev-dependencies]
-tokio = { workspace = true, features = ["io-util", "net", "rt", "time"] }
+tokio = { workspace = true, features = ["io-util", "net", "rt", "sync", "time"] }
 
 [lints]
 workspace = true

@@ -9,6 +9,7 @@ use spareline_server::smoke::{self, Smoke, SmokeError};
 use tokio::io::AsyncWriteExt as _;
 use tokio::net::{TcpListener, TcpStream};
 use tokio::runtime::Builder;
+use tokio::sync::mpsc::{self, UnboundedReceiver, UnboundedSender};
 
 fn block_on<F: Future>(future: F) -> F::Output {
     Builder::new_current_thread()
@@ -52,7 +53,7 @@ async fn hex_string(stream: &mut TcpStream, text: &str) {
         .expect("the client reads");
 }
 
-async fn serve(stream: &mut TcpStream, phones: &Phones) {
+async fn serve(stream: &mut TcpStream, phones: &Phones, commands: &UnboundedSender<String>) {
     let Some(request) = read_request(stream).await else {
         return;
     };
@@ -65,11 +66,9 @@ async fn serve(stream: &mut TcpStream, phones: &Phones) {
                 .expect("a transport request");
             stream.write_all(b"OKAY").await.expect("the client reads");
             let shell = read_request(stream).await.expect("a shell request");
-            assert_eq!(
-                shell,
-                format!("shell,v2,raw:{}", smoke::SMOKE_COMMAND),
-                "the smoke runs only its read-only getprop"
-            );
+            commands
+                .send(shell)
+                .expect("the test collects the commands");
             stream.write_all(b"OKAY").await.expect("the client reads");
             let answer = phones
                 .answers
@@ -86,7 +85,26 @@ async fn serve(stream: &mut TcpStream, phones: &Phones) {
     }
 }
 
-async fn stand_in(phones: Phones) -> AdbClient {
+/// A running stand-in: the client that reaches it, and every shell service it was asked for.
+struct StandIn {
+    adb: AdbClient,
+    commands: UnboundedReceiver<String>,
+}
+
+impl StandIn {
+    /// Asserts that every shell command the smoke ran was its read-only `getprop`.
+    fn assert_only_read(&mut self) {
+        while let Ok(command) = self.commands.try_recv() {
+            assert_eq!(
+                command,
+                format!("shell,v2,raw:{}", smoke::SMOKE_COMMAND),
+                "the smoke runs only its read-only getprop"
+            );
+        }
+    }
+}
+
+async fn stand_in(phones: Phones) -> StandIn {
     let listener = TcpListener::bind("127.0.0.1:0")
         .await
         .expect("a loopback port is free");
@@ -94,13 +112,17 @@ async fn stand_in(phones: Phones) -> AdbClient {
         .local_addr()
         .expect("the listener has an address")
         .port();
+    let (sender, commands) = mpsc::unbounded_channel();
     tokio::spawn(async move {
         loop {
             let (mut stream, _) = listener.accept().await.expect("the client connects");
-            serve(&mut stream, &phones).await;
+            serve(&mut stream, &phones, &sender).await;
         }
     });
-    AdbClient::new(Endpoint::new("127.0.0.1".to_owned(), port))
+    StandIn {
+        adb: AdbClient::new(Endpoint::new("127.0.0.1".to_owned(), port)),
+        commands,
+    }
 }
 
 fn two_phones() -> Phones {
@@ -118,7 +140,8 @@ fn two_phones() -> Phones {
 #[test]
 fn passes_and_reports_each_phone() {
     block_on(async {
-        let adb = stand_in(two_phones()).await;
+        let mut stand_in_server = stand_in(two_phones()).await;
+        let adb = stand_in_server.adb.clone();
         let mut out = Vec::new();
         Smoke::new(&adb, 1).run(&mut out).await.unwrap();
         let port = adb.endpoint().port();
@@ -129,27 +152,31 @@ fn passes_and_reports_each_phone() {
                  SPARELINE00002: unauthorized\n  SPARELINE00001: S6702X, Android 14\nsmoke ok\n"
             )
         );
+        stand_in_server.assert_only_read();
     });
 }
 
 #[test]
 fn fails_with_fewer_online_phones_than_asked() {
     block_on(async {
-        let adb = stand_in(two_phones()).await;
+        let mut stand_in_server = stand_in(two_phones()).await;
+        let adb = stand_in_server.adb.clone();
         let mut out = Vec::new();
         let error = Smoke::new(&adb, 2).run(&mut out).await.unwrap_err();
         assert_eq!(error.to_string(), "expected at least 2 online phone(s)");
+        stand_in_server.assert_only_read();
     });
 }
 
 #[test]
 fn passes_with_no_phones_when_none_are_asked_for() {
     block_on(async {
-        let adb = stand_in(Phones {
+        let mut stand_in_server = stand_in(Phones {
             list: "",
             answers: Vec::new(),
         })
         .await;
+        let adb = stand_in_server.adb.clone();
         let mut out = Vec::new();
         Smoke::new(&adb, 0).run(&mut out).await.unwrap();
         assert!(
@@ -157,6 +184,7 @@ fn passes_with_no_phones_when_none_are_asked_for() {
                 .unwrap()
                 .ends_with("0 device(s), 0 online\nsmoke ok\n")
         );
+        stand_in_server.assert_only_read();
     });
 }
 
@@ -166,7 +194,8 @@ fn a_phone_that_answers_without_a_model_fails() {
         let mut phones = two_phones();
         phones.answers[0].stdout = "\n";
         phones.answers[0].exit_code = 1;
-        let adb = stand_in(phones).await;
+        let mut stand_in_server = stand_in(phones).await;
+        let adb = stand_in_server.adb.clone();
         let mut out = Vec::new();
         let error = Smoke::new(&adb, 0).run(&mut out).await.unwrap_err();
         assert!(matches!(error, SmokeError::PhonesSilent { count: 1 }));
@@ -176,5 +205,6 @@ fn a_phone_that_answers_without_a_model_fails() {
             report.contains("  SPARELINE00001: FAILED exit 1, model \"\"\n"),
             "{report}"
         );
+        stand_in_server.assert_only_read();
     });
 }

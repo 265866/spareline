@@ -51,65 +51,56 @@ impl<'client> Smoke<'client> {
         Self { adb, minimum }
     }
 
-    /// Runs the smoke, writing the report to `out` as spareline-old did, ending with
-    /// `smoke ok`.
+    /// Checks that the adb server answers, that every online phone answers a read-only
+    /// `getprop`, and that at least the minimum of phones are online, writing the report to `out`
+    /// as spareline-old did, ending with `smoke ok`.
     ///
     /// # Errors
     ///
-    /// Returns the first reason the smoke fails.
+    /// Returns the first reason the smoke fails; the report up to that point is already written.
     pub async fn run<W: Write>(&self, out: &mut W) -> Result<(), SmokeError> {
-        run(self.adb, self.minimum, out).await
-    }
-}
-
-/// Checks that the adb server answers, that every online phone answers a read-only `getprop`,
-/// and that at least `minimum` phones are online, writing the report to `out` as spareline-old
-/// did, ending with `smoke ok`.
-///
-/// # Errors
-///
-/// Returns the first reason the smoke fails; the report up to that point is already written.
-async fn run<W: Write>(adb: &AdbClient, minimum: u32, out: &mut W) -> Result<(), SmokeError> {
-    let quick = adb.clone().with_call_timeout(Duration::from_secs(5));
-    let version = quick.version().await?;
-    let devices = quick.list_devices().await?;
-    let online: Vec<&str> = devices
-        .iter()
-        .filter(|device| device.state == DeviceState::Device)
-        .map(|device| device.serial.as_str())
-        .collect();
-    writeln!(
-        out,
-        "adb server {}: protocol {version}, {} device(s), {} online",
-        adb.endpoint(),
-        devices.len(),
-        online.len()
-    )?;
-    let not_online = devices
-        .iter()
-        .filter(|device| device.state != DeviceState::Device);
-    for device in not_online {
-        writeln!(out, "  {}: {}", device.serial, device.raw_state)?;
-    }
-    let reader = adb.clone().with_call_timeout(Duration::from_secs(10));
-    let mut failed = 0;
-    for serial in &online {
-        match read_phone(&reader, serial).await {
-            Ok(line) => writeln!(out, "  {serial}: {line}")?,
-            Err(message) => {
-                failed += 1;
-                writeln!(out, "  {serial}: FAILED {message}")?;
+        let (adb, minimum) = (self.adb, self.minimum);
+        let quick = adb.clone().with_call_timeout(Duration::from_secs(5));
+        let version = quick.version().await?;
+        let devices = quick.list_devices().await?;
+        let online: Vec<&str> = devices
+            .iter()
+            .filter(|device| device.state == DeviceState::Device)
+            .map(|device| device.serial.as_str())
+            .collect();
+        writeln!(
+            out,
+            "adb server {}: protocol {version}, {} device(s), {} online",
+            adb.endpoint(),
+            devices.len(),
+            online.len()
+        )?;
+        let not_online = devices
+            .iter()
+            .filter(|device| device.state != DeviceState::Device);
+        for device in not_online {
+            writeln!(out, "  {}: {}", device.serial, device.raw_state)?;
+        }
+        let reader = adb.clone().with_call_timeout(Duration::from_secs(10));
+        let mut failed = 0;
+        for serial in &online {
+            match read_phone(&reader, serial).await {
+                Ok(line) => writeln!(out, "  {serial}: {line}")?,
+                Err(message) => {
+                    failed += 1;
+                    writeln!(out, "  {serial}: FAILED {message}")?;
+                }
             }
         }
+        if failed > 0 {
+            return Err(SmokeError::PhonesSilent { count: failed });
+        }
+        if online.len() < usize::try_from(minimum).unwrap_or(usize::MAX) {
+            return Err(SmokeError::TooFewPhones { minimum });
+        }
+        writeln!(out, "smoke ok")?;
+        Ok(())
     }
-    if failed > 0 {
-        return Err(SmokeError::PhonesSilent { count: failed });
-    }
-    if online.len() < usize::try_from(minimum).unwrap_or(usize::MAX) {
-        return Err(SmokeError::TooFewPhones { minimum });
-    }
-    writeln!(out, "smoke ok")?;
-    Ok(())
 }
 
 /// The phone's model and Android version, as `<model>, Android <release>`, or why it failed.

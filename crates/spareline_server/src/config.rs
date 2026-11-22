@@ -1,5 +1,6 @@
 //! The service's settings, read from the environment.
 
+use std::ffi::OsString;
 use std::fmt::{self, Display, Formatter};
 use std::path::PathBuf;
 use std::time::Duration;
@@ -87,54 +88,68 @@ impl Issues {
     }
 }
 
-/// Reads a whole number from `min` to `max` from `variable`, or `default` when it's unset.
-fn whole_number<F: Fn(&str) -> Option<String>>(
-    lookup: &F,
-    issues: &mut Issues,
-    variable: &'static str,
-    min: u64,
-    max: u64,
-    default: u64,
-) -> u64 {
-    let Some(raw) = lookup(variable) else {
-        return default;
-    };
-    let parsed: Option<u64> = raw
-        .trim()
-        .parse()
-        .ok()
-        .filter(|value| (min..=max).contains(value));
-    parsed.unwrap_or_else(|| {
-        issues.add(
-            variable,
-            format!("expected a whole number from {min} to {max}, got \"{raw}\""),
-        );
-        default
-    })
+/// The environment as one validation pass reads it: each variable's text, with every invalid one
+/// recorded.
+struct Reader<F> {
+    lookup: F,
+    issues: Issues,
 }
 
-impl Config {
-    /// Reads the settings through `lookup`, which returns a variable's value or `None` when it's
-    /// unset, such as `|name| std::env::var(name).ok()`.
-    ///
-    /// # Errors
-    ///
-    /// Returns every invalid variable at once.
-    pub fn from_env<F: Fn(&str) -> Option<String>>(lookup: F) -> Result<Self, EnvError> {
-        let mut issues = Issues::default();
-        let host = lookup("HOST").unwrap_or_else(|| "127.0.0.1".to_owned());
-        let port = whole_number(&lookup, &mut issues, "PORT", 1, 65_535, 8740);
-        let adb_raw = lookup("ADB_SERVER").unwrap_or_else(|| "127.0.0.1:5037".to_owned());
+impl<F: Fn(&str) -> Option<OsString>> Reader<F> {
+    /// The text of `variable`, or `None` when it's unset. A value that isn't UTF-8 is an issue
+    /// and reads as unset, so the pass still reports it rather than quietly using the default.
+    fn text(&mut self, variable: &'static str) -> Option<String> {
+        match (self.lookup)(variable)?.into_string() {
+            Ok(text) => Some(text),
+            Err(raw) => {
+                self.issues.add(
+                    variable,
+                    format!(
+                        "expected text, got bytes that aren't UTF-8: \"{}\"",
+                        raw.display()
+                    ),
+                );
+                None
+            }
+        }
+    }
+
+    /// Reads a whole number from `min` to `max` from `variable`, or `default` when it's unset.
+    fn whole_number(&mut self, variable: &'static str, min: u64, max: u64, default: u64) -> u64 {
+        let Some(raw) = self.text(variable) else {
+            return default;
+        };
+        let parsed: Option<u64> = raw
+            .trim()
+            .parse()
+            .ok()
+            .filter(|value| (min..=max).contains(value));
+        parsed.unwrap_or_else(|| {
+            self.issues.add(
+                variable,
+                format!("expected a whole number from {min} to {max}, got {raw:?}"),
+            );
+            default
+        })
+    }
+
+    /// Reads the service's settings.
+    fn config(&mut self) -> Config {
+        let host = self.text("HOST").unwrap_or_else(|| "127.0.0.1".to_owned());
+        let port = self.whole_number("PORT", 1, 65_535, 8740);
+        let adb_raw = self
+            .text("ADB_SERVER")
+            .unwrap_or_else(|| "127.0.0.1:5037".to_owned());
         let parsed: Result<Endpoint, EndpointError> = adb_raw.parse();
         let adb_server = parsed.unwrap_or_else(|error| {
-            issues.add("ADB_SERVER", error.to_string());
+            self.issues.add("ADB_SERVER", error.to_string());
             Endpoint::new("127.0.0.1".to_owned(), 5037)
         });
-        let data_dir = PathBuf::from(lookup("DATA_DIR").unwrap_or_else(|| "data".to_owned()));
-        let site = match lookup("SITE") {
+        let data_dir = PathBuf::from(self.text("DATA_DIR").unwrap_or_else(|| "data".to_owned()));
+        let site = match self.text("SITE") {
             None => "local".to_owned(),
             Some(raw) if raw.trim().is_empty() => {
-                issues.add(
+                self.issues.add(
                     "SITE",
                     "expected a name for this host, got only blanks".to_owned(),
                 );
@@ -142,23 +157,19 @@ impl Config {
             }
             Some(raw) => raw.trim().to_owned(),
         };
-        let health = whole_number(&lookup, &mut issues, "HEALTH_INTERVAL_S", 5, 3600, 60);
-        let web_dir = lookup("SPARELINE_WEB_DIR")
-            .or_else(|| lookup("WEB_DIR"))
+        let health = self.whole_number("HEALTH_INTERVAL_S", 5, 3600, 60);
+        let web_dir = self
+            .text("SPARELINE_WEB_DIR")
+            .filter(|value| !value.is_empty())
+            .or_else(|| self.text("WEB_DIR"))
             .unwrap_or_else(|| "dist/web".to_owned());
-        let policy_check = whole_number(
-            &lookup,
-            &mut issues,
-            "POLICY_CHECK_INTERVAL_S",
-            30,
-            86_400,
-            300,
-        );
-        let policy_profile = lookup("POLICY_PROFILE")
+        let policy_check = self.whole_number("POLICY_CHECK_INTERVAL_S", 30, 86_400, 300);
+        let policy_profile = self
+            .text("POLICY_PROFILE")
             .map(|raw| raw.trim().to_owned())
             .filter(|value| !value.is_empty())
             .map(PathBuf::from);
-        let config = Self {
+        Config {
             host,
             port: u16::try_from(port).unwrap_or(8740),
             adb_server,
@@ -168,8 +179,24 @@ impl Config {
             web_dir: PathBuf::from(web_dir),
             policy_check_interval: Duration::from_secs(policy_check),
             policy_profile,
+        }
+    }
+}
+
+impl Config {
+    /// Reads the settings through `lookup`, which returns a variable's value or `None` when it's
+    /// unset, such as `std::env::var_os`.
+    ///
+    /// # Errors
+    ///
+    /// Returns every invalid variable at once.
+    pub fn from_env<F: Fn(&str) -> Option<OsString>>(lookup: F) -> Result<Self, EnvError> {
+        let mut reader = Reader {
+            lookup,
+            issues: Issues::default(),
         };
-        issues.finish(config)
+        let config = reader.config();
+        reader.issues.finish(config)
     }
 
     /// The database file, `DATA_DIR/spareline.db`.
@@ -179,22 +206,38 @@ impl Config {
     }
 }
 
-/// Reads `SMOKE_MIN_PHONES`, the number of online phones `spareline smoke` needs, 1 when unset.
-///
-/// # Errors
-///
-/// Returns an error when the value isn't a whole number.
-pub fn smoke_min_phones<F: Fn(&str) -> Option<String>>(lookup: F) -> Result<u32, EnvError> {
-    let mut issues = Issues::default();
-    let minimum = whole_number(
-        &lookup,
-        &mut issues,
-        "SMOKE_MIN_PHONES",
-        0,
-        u64::from(u32::MAX),
-        1,
-    );
-    issues.finish(u32::try_from(minimum).unwrap_or(1))
+/// What `spareline smoke` reads: the service's settings and `SMOKE_MIN_PHONES`.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SmokeSettings {
+    /// The service's settings, of which the smoke uses `ADB_SERVER`.
+    pub config: Config,
+    /// How many online phones the smoke needs: `SMOKE_MIN_PHONES`, 1 when unset or empty, as
+    /// spareline-old read it.
+    pub min_phones: u32,
+}
+
+impl SmokeSettings {
+    /// Reads the settings through `lookup`, as [`Config::from_env`] does.
+    ///
+    /// # Errors
+    ///
+    /// Returns every invalid variable at once, `SMOKE_MIN_PHONES` included.
+    pub fn from_env<F: Fn(&str) -> Option<OsString>>(lookup: F) -> Result<Self, EnvError> {
+        let without_empty = |name: &str| {
+            lookup(name).filter(|value| name != "SMOKE_MIN_PHONES" || !value.is_empty())
+        };
+        let mut reader = Reader {
+            lookup: without_empty,
+            issues: Issues::default(),
+        };
+        let config = reader.config();
+        let minimum = reader.whole_number("SMOKE_MIN_PHONES", 0, u64::from(u32::MAX), 1);
+        let settings = Self {
+            config,
+            min_phones: u32::try_from(minimum).unwrap_or(1),
+        };
+        reader.issues.finish(settings)
+    }
 }
 
 #[cfg(test)]
@@ -208,7 +251,7 @@ mod tests {
             .iter()
             .map(|[name, value]| ((*name).to_owned(), (*value).to_owned()))
             .collect();
-        Config::from_env(|name| map.get(name).cloned())
+        Config::from_env(|name| map.get(name).map(OsString::from))
     }
 
     #[test]
@@ -284,16 +327,65 @@ mod tests {
         }
     }
 
+    fn smoke(pairs: &[[&str; 2]]) -> Result<SmokeSettings, EnvError> {
+        let map: HashMap<String, String> = pairs
+            .iter()
+            .map(|[name, value]| ((*name).to_owned(), (*value).to_owned()))
+            .collect();
+        SmokeSettings::from_env(|name| map.get(name).map(OsString::from))
+    }
+
     #[test]
     fn smoke_needs_one_phone_unless_told_otherwise() {
-        assert_eq!(smoke_min_phones(|_| None).unwrap(), 1);
-        assert_eq!(smoke_min_phones(|_| Some("0".to_owned())).unwrap(), 0);
+        assert_eq!(smoke(&[]).unwrap().min_phones, 1);
+        assert_eq!(smoke(&[["SMOKE_MIN_PHONES", ""]]).unwrap().min_phones, 1);
+        assert_eq!(smoke(&[["SMOKE_MIN_PHONES", "0"]]).unwrap().min_phones, 0);
         assert_eq!(
-            smoke_min_phones(|_| Some("x".to_owned()))
-                .unwrap_err()
-                .to_string(),
+            smoke(&[["SMOKE_MIN_PHONES", "x"]]).unwrap_err().to_string(),
             "invalid environment:\n  SMOKE_MIN_PHONES: expected a whole number from 0 to \
              4294967295, got \"x\""
         );
+    }
+
+    #[test]
+    fn smoke_reports_every_invalid_variable_at_once() {
+        let error = smoke(&[["PORT", "abc"], ["SMOKE_MIN_PHONES", "x"]]).unwrap_err();
+        let variables: Vec<&str> = error.issues().iter().map(|issue| issue.variable).collect();
+        assert_eq!(variables, ["PORT", "SMOKE_MIN_PHONES"]);
+        let error = smoke(&[["PORT", ""]]).unwrap_err();
+        assert_eq!(
+            error.issues()[0].variable,
+            "PORT",
+            "an empty PORT stays invalid"
+        );
+    }
+
+    #[test]
+    fn a_value_that_is_not_utf8_is_reported() {
+        use std::os::unix::ffi::OsStringExt as _;
+
+        let error =
+            Config::from_env(|name| (name == "PORT").then(|| OsString::from_vec(vec![0xff])))
+                .unwrap_err();
+        assert_eq!(error.issues()[0].variable, "PORT");
+        assert!(
+            error.issues()[0].message.contains("aren't UTF-8"),
+            "{error}"
+        );
+    }
+
+    #[test]
+    fn odd_values_are_quoted_unambiguously() {
+        let error = read(&[["PORT", "8\"7\n"]]).unwrap_err();
+        assert_eq!(
+            error.issues()[0].message,
+            r#"expected a whole number from 1 to 65535, got "8\"7\n""#
+        );
+    }
+
+    #[test]
+    fn an_empty_spareline_web_dir_falls_back_to_web_dir() {
+        let config = read(&[["SPARELINE_WEB_DIR", ""], ["WEB_DIR", "/web"]]).unwrap();
+        assert_eq!(config.web_dir, PathBuf::from("/web"));
     }
 }
