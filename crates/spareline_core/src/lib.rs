@@ -3,6 +3,7 @@
 
 mod android;
 mod identifiers;
+mod monitor;
 mod probe;
 mod sms;
 mod text;
@@ -16,6 +17,12 @@ pub use android::{
 };
 pub use identifiers::{
     SubInfoCodes, SubInfoLookup, is_iccid, is_imei, sub_info_call, sub_info_codes, to_e164,
+};
+pub use monitor::{
+    DATA_WINDOW_SECONDS, NetBucket, NetEntry, NetSection, PHONE_UID, SIM_LOG_COMMAND,
+    SIM_LOG_PATTERN, SIM_STATE_COMMAND, SimChange, SimChangeKind, SimDataUsage, SimLogScanner,
+    SimSignal, SimStatePoll, SimUsage, UidBytes, diff_slots, internet_usage, parse_netstats,
+    slot_map,
 };
 pub use probe::{
     IDENTITY_INTERVAL, IDENTITY_RETRY_DELAYS, IdentityProbe, PROBE_TIMEOUT, PhoneHealth,
