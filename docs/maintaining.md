@@ -101,6 +101,16 @@ the minor version and a `fix` the patch version. To ship:
    before you merge: the next merge to `main` closes the release pull request and opens a new one
    without the edit. To make a release a minor one, change the version on that branch too: in the
    root `Cargo.toml`, in `Cargo.lock` and in the `CHANGELOG.md` heading.
+   At the first release, release-plz leaves out each commit that changed only a crate that
+   `changelog_include` in `release-plz.toml` lists: it adds those crates' commits only after a
+   release tag. On the release pull request's branch, add to the new section of `CHANGELOG.md` an
+   entry for each commit that this prints and the section lacks; it also prints commits that
+   changed the main crate too, which the section has:
+   `git log --format=%s -- crates ':!crates/spareline'`. Every type is left out, not only
+   `feat` and `fix`. Put each under `### Added` for a `feat`, `### Fixed` for a `fix`, and
+   `### Other` for any other type, such as a `test` or a `refactor`, and write it as release-plz
+   writes the others: `feat(core): parse dates (#12)` becomes `- *(core)* parse dates (#12)`.
+   Later releases list those commits without the edit.
    The first release after you add a crate comes out as a patch when only that crate changed, and
    its notes can repeat older entries; delete those. Renaming the main crate stops the release
    workflow with an error that says what to do by hand.
@@ -182,6 +192,10 @@ An update leaves them alone.
 
   The answer replaces the whole mapping, so repeat every key you keep. `just image` builds the
   image as the release does.
+
+- **Deploy kit.** Keep the scripts and units that install and run it on a host in `deploy/`.
+  They are code, and `just policy` runs shellcheck on the scripts; "Send a change" in
+  [CONTRIBUTING.md](../CONTRIBUTING.md#send-a-change) says which files there stay rules.
 
 ## Change an answer
 
