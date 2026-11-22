@@ -179,7 +179,9 @@ must build without a UI toolkit then can't reach one through a new dependency. `
 every other crate that reaches the package, with the path. It also fails a key that lists crates
 but matches no package, so a misspelled key can't pass while it restricts nothing. An empty list
 lets no crate reach the package, and may name one no crate depends on yet, to keep the first
-dependency out. The setting is a rule, so add or change it in a rules pull request:
+dependency out. Each list names every crate that may reach its package, so where a UI crate
+depends on GPUI beside `spareline`, list it too. The setting is a rule, so add or change it
+in a rules pull request:
 
 ```toml
 [workspace.metadata.policy.restricted_crates]
@@ -279,8 +281,11 @@ An update leaves them alone.
   `just policy` checks a kit in the root `deploy/` the same way, but release-plz ignores it: a
   commit that changes only that kit releases nothing, and its fix ships with the next release of
   the crate. Add the fix's line to that release's notes by hand, in `CHANGELOG.md` on the release
-  pull request's branch, as [Each release](#each-release) says. To move the kit into the crate,
-  open one pull request that moves it:
+  pull request's branch, as [Each release](#each-release) says. Moving the kit is optional, and a
+  root kit keeps working. Leave it at the root when a host runs it from a clone of the repository,
+  such as a unit that runs `deploy/pull.sh` in the checkout, since the host's first deploy after
+  the move would look for the old path. To move the kit into the crate, open one pull request that
+  moves it:
 
   ```sh
   git mv deploy crates/spareline/deploy
@@ -291,17 +296,29 @@ An update leaves them alone.
   `action.yml` or a `*.just` module, count as rules at both paths, as a workflow or justfile
   outside the kit that names its path does when it changes, such as a workflow's
   `uses: ./deploy` or a justfile's `import 'deploy/tasks.just'`. Change those paths in the same
-  pull request, in the kit's rule files too, and the pull request is a rules change. A code file
-  added, removed or changed in it makes it no longer a move, so the kit's code counts at both
-  paths and mixes with its rules.
+  pull request, in the kit's rule files too, and the pull request is a rules change. Fix the
+  links to the kit in the README and the pages under `docs/` in the same pull request too, such as
+  `[deploy/](../deploy)`: `just links` fails the move otherwise, and those files are neither rules
+  nor code, while `CONTRIBUTING.md` and `docs/style.md` are rules. A code file added, removed or
+  changed in it makes it no longer a move, so the kit's code counts at both paths and mixes with
+  its rules, and so does a code file outside the kit, such as a crate's source that names
+  `deploy/`, which goes in a code pull request instead.
 
-  The kit sits two directories deeper after the move, so a code file that names the old place,
-  such as `deploy/install.sh` in a unit or a README, or that climbs out of the kit with `..`, such
-  as `cd "$(dirname "$0")/.."` or an `EnvironmentFile=` path through `deploy/../.env`, reaches
-  somewhere else with the same bytes. Fix those in a code pull request right after the move. Crate
-  code that reaches into the kit by a relative path, such as
-  `include_str!("../../../deploy/app.service")`, stops building at the move, so drop that path in
-  a code pull request before it. The move doesn't count either when:
+  The kit sits two directories deeper after the move, so a kit file that names the old place,
+  such as `deploy/install.sh` in a unit, or that climbs out of the kit with `..`, such as
+  `cd "$(dirname "$0")/.."`, an `EnvironmentFile=` path through `deploy/../.env` or a link to
+  `../docs/` in the kit's own README, reaches somewhere else with the same bytes, and a Markdown
+  link out of the kit fails `just links` at the move. Since changing a kit file in the move's pull
+  request makes it no longer a move, make those references independent of the kit's place in a
+  code pull request first: a script that needs the repository's root finds it with
+  `git -C "$(dirname "$0")" rev-parse --show-toplevel` or takes it as an argument rather than
+  counting `..`, a command runs from the kit's own directory, and a link out of the kit is a full
+  URL. A host file that names a path in the checkout, such as that `EnvironmentFile=`, can't be
+  made independent, which is a reason to keep the kit at the root. Crate code that reaches into
+  the kit by a relative path, such as `include_str!("../../../deploy/app.service")`, stops
+  building at the move, so drop that path in the same code pull request, with any other code
+  outside the kit that names it. Then the move is renames alone, beside the links in the docs
+  and the rule files that name the kit. It doesn't count as a move when:
 
   - the root keeps a `deploy` entry, or the kit's code also lands in a second crate;
   - the root or `crates/` holds an entry that a case-insensitive file system reads as the same
@@ -327,6 +344,7 @@ or the processors the image runs on, `x86_64` and `aarch64` (ARM64):
 ```sh
 uvx copier update --defaults --vcs-ref=:current: --data 'architectures=[x86_64]'
 ```
+
 The change is a rule change, so it can't also change code. Once it merges, run `just check-github`
 on `main`, and `just setup-github` if it reports a wrong setting. Changing the architectures needs
 nothing on GitHub, since `CI passed` covers whatever platforms CI runs. Some answers also change

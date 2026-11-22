@@ -5,7 +5,7 @@ members = ["crates/*"]
 # The custom lints from trellis, at the commit this project was last generated or updated from.
 [workspace.metadata.dylint]
 libraries = [
-    { git = "https://github.com/265866/trellis", rev = "33b1aefe2b06ccddd0dec337cb06c275a8b0e2e3", pattern = "lints" },
+    { git = "https://github.com/265866/trellis", rev = "75916a993d65062702ba4009c9c2b3fbadba6d4c", pattern = "lints" },
 ]
 
 # Settings for `trellis-policy check`, which `just policy` runs. Changing them is a rule change.

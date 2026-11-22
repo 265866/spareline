@@ -102,6 +102,8 @@ jobs:
     needs: release
     if: needs.release.outputs.tag != ''
     runs-on: ubuntu-24.04
+    # The attest and sign retries can wait 16 minutes in all, so the limit is 60, where a private
+    # repository, which runs neither, has 45.
     timeout-minutes: 60
     permissions:
       contents: write
@@ -161,7 +163,8 @@ jobs:
           context: .
           file: Containerfile
           platforms: linux/amd64,linux/arm64
-          # Pushed by its digest alone, so no tag names it until the last step.
+          # Pushed by its digest alone, so no tag names it until "Tag the image with its version,
+          # minor and latest", the step before "Publish the release".
           outputs: type=image,name=${{ env.IMAGE }},push-by-digest=true,name-canonical=true,push=true
           sbom: true
           provenance: mode=max
