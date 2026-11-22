@@ -8,8 +8,10 @@ use rusqlite::{Connection, OpenFlags};
 use spareline_core::Timestamp;
 
 use crate::accounts::Accounts;
+use crate::control_sessions::ControlSessions;
 use crate::database_error::DatabaseError;
 use crate::device_events::DeviceEvents;
+use crate::health_store::HealthStore;
 use crate::inventory::Inventory;
 use crate::message_store::MessageStore;
 use crate::migration::{AppliedMigration, MIGRATION_FILES, Migration};
@@ -117,6 +119,16 @@ impl Database {
     /// Texts, their attachments' metadata, and the ingest cursors.
     pub fn messages(&mut self) -> MessageStore<'_> {
         MessageStore::new(&mut self.connection)
+    }
+
+    /// The five-minute health aggregates.
+    pub fn health(&mut self) -> HealthStore<'_> {
+        HealthStore::new(&mut self.connection)
+    }
+
+    /// The audit rows of screen viewers that can send input.
+    pub fn control_sessions(&mut self) -> ControlSessions<'_> {
+        ControlSessions::new(&mut self.connection)
     }
 }
 
