@@ -115,7 +115,8 @@ jobs:
       - run: just lint
 
       # cargo-dylint builds the lint library under target/dylint/libraries, from its git checkout,
-      # and its driver under ~/.dylint_drivers. rust-cache keeps only what the project's own
+      # and its driver under ~/.dylint_drivers; target/dylint/trellis-rev, which `just dylint`
+      # reads, says which trellis commit the library came from. rust-cache keeps only what the project's own
       # dependencies build, so without this both rebuild on every run. The key holds everything
       # the two builds depend on: the runner's system, image name and processor, the lints'
       # nightly, the cargo-dylint version, and the libraries entry with its pinned trellis commit.
@@ -139,6 +140,7 @@ jobs:
           key: ${{ steps.dylint-key.outputs.key }}
           path: |
             target/dylint/libraries
+            target/dylint/trellis-rev
             ~/.dylint_drivers
             ~/.cargo/git/checkouts/trellis-*
 
@@ -152,6 +154,7 @@ jobs:
           key: ${{ steps.dylint-key.outputs.key }}
           path: |
             target/dylint/libraries
+            target/dylint/trellis-rev
             ~/.dylint_drivers
             ~/.cargo/git/checkouts/trellis-*
 

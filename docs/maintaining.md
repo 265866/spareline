@@ -155,6 +155,34 @@ name it too: the root `Cargo.toml`, `dylint.toml`, the release configuration, th
 and the workflows. So renaming it changes rules and code together. To rename it,
 follow "Name and kind" under [Change an answer](#change-an-answer).
 
+## Extend what trellis generates
+
+Each of these is a place trellis leaves to the project, so you never edit a file it generates.
+An update leaves them alone.
+
+- **What the image adds.** The `image` answer, a YAML mapping, adds to the image without an edit
+  to `Containerfile`: `env` sets environment defaults, each a quoted string, `workdir` the
+  directory the service starts in, `expose` the ports it listens on, and `files: true` copies
+  `crates/spareline/image/` onto the image's root, such as data files at
+  `crates/spareline/image/app/profiles/` or extra notices at
+  `crates/spareline/image/usr/share/doc/spareline/`. The image stays distroless
+  and runs as its `nonroot` user. Its files and working directory belong to root, readable by all
+  and executable by none, so a directory the service writes needs a mount. They are data: none
+  may be a link or an ELF program or library, and they go under `/usr/share` or a directory of
+  their own, such as `/app`, never in one the base image keeps, such as `/usr/lib`, `/etc` or
+  `/tmp`. The binary and trellis's license files win over a file at the same path. Those files
+  are code, apart from ones that are rules by their names, such as a `.gitignore`. Land them in a
+  code pull request first, since the image's build fails without them, then set the answer in a
+  rules pull request:
+
+  ```sh
+  uvx copier update --defaults --vcs-ref=:current: \
+    --data 'image={env: {HOST: 0.0.0.0, PORT: "8080"}, workdir: /app, expose: [8080], files: true}'
+  ```
+
+  The answer replaces the whole mapping, so repeat every key you keep. `just image` builds the
+  image as the release does.
+
 ## Change an answer
 
 To change an answer, keep the trellis version and pass the new value, such as the license:
