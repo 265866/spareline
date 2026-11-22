@@ -1,2 +1,7 @@
 [files]
 extend-exclude = ["Cargo.lock"]
+
+[default.extend-words]
+# Android's persist.radio.multisim.config value for a triple-SIM, triple-standby phone, which the
+# identity probe reads.
+tsts = "tsts"
