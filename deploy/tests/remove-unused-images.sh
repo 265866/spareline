@@ -22,7 +22,9 @@ case "$1 $2" in
     [[ -n "$id" ]] || exit 125
     case "$format" in
       '{{.Id}}') echo "$id" ;;
-      '{{range .RepoTags}}{{.}} {{end}}') tr '\n' ' ' <"$IMAGES/$id"; echo ;;
+      '{{range .RepoTags}}{{.}} {{end}}')
+        if [[ -f "$IMAGES/.broken" ]]; then echo "Error: database is locked" >&2; exit 125; fi
+        tr '\n' ' ' <"$IMAGES/$id"; echo ;;
       *) exit 2 ;;
     esac ;;
   "rmi "*) rm -f "$IMAGES/$2" ;;
@@ -36,12 +38,18 @@ failures=0
 check() {
   local scenario=$1 candidate=$2 want=$3
   : >"$work/calls"
-  (
+  if ! (
     export PATH="$work/bin:$PATH" IMAGES="$work/images" CALLS="$work/calls" SPARELINE_APP="$work/app"
     # shellcheck source=../podman/common.sh
     source "$work/app/common.sh"
+    trap - ERR
     remove_unused_images "$candidate"
-  ) >"$work/out" 2>&1
+  ) >"$work/out" 2>&1; then
+    echo "FAIL: $scenario: remove_unused_images returned an error"
+    sed 's/^/  /' "$work/out"
+    failures=$((failures + 1))
+    return
+  fi
   if grep -qx "rmi $candidate" "$work/calls"; then got=removed; else got=kept; fi
   if [[ $got == "$want" ]]; then
     echo "ok: $scenario: $got"
@@ -53,7 +61,7 @@ check() {
 }
 
 reset_images() {
-  rm -f "$work/images"/*
+  rm -f "$work/images"/* "$work/images/.broken"
   printf '%s\n' localhost/spareline:current >"$work/images/new0"
   printf '%s\n' localhost/spareline:previous >"$work/images/old0"
 }
@@ -68,5 +76,10 @@ check "a retired image with no name left" prev0 removed
 
 reset_images
 check "a retired image that is still :previous" old0 kept
+
+reset_images
+printf '%s\n' localhost/spareline-rollback:previous >"$work/images/prev0"
+touch "$work/images/.broken"
+check "a retired image whose tags can't be read" prev0 kept
 
 [[ $failures -eq 0 ]]

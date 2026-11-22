@@ -121,18 +121,19 @@ wait_healthy() {
 }
 
 # Removes the given image, by ID, when it is neither :current nor :previous and
-# no name is left on it, then dangling spareline images (pulled but never
+# no tag is left on it, then dangling spareline images (pulled but never
 # applied, such as :latest images replaced before a maintenance window). An
-# image that still carries a name, such as one an operator added to keep a
-# rollback copy, stays: removing it by ID would take that name with it. Only
-# images built from this repository match the label filter, and tagged images
-# are never dangling.
+# image that still carries a tag, such as one an operator added to keep a
+# rollback copy, stays: removing it by ID would take that tag with it. So does
+# one whose tags can't be read. Only images built from this repository match
+# the label filter, and tagged images are never dangling.
 remove_unused_images() {
   local retired=$1 keep names
   keep=" $(image_id "$CURRENT") $(image_id "$PREVIOUS" 2>/dev/null || true) "
   if [[ -n "$retired" && "$keep" != *" $retired "* ]]; then
-    names=$(run podman image inspect --format '{{range .RepoTags}}{{.}} {{end}}' "$retired" 2>/dev/null || true)
-    if [[ -n "${names// /}" ]]; then
+    if ! names=$(run podman image inspect --format '{{range .RepoTags}}{{.}} {{end}}' "$retired"); then
+      log "Could not read the names of the retired image $retired; kept it."
+    elif [[ -n "${names// /}" ]]; then
       log "Kept the retired image $retired, which still carries: ${names% }"
     else
       run podman rmi "$retired" >/dev/null || log "Could not remove the retired image $retired."

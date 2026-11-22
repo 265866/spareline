@@ -125,7 +125,7 @@ When `UPSTREAM` is a new image, `update.sh` does these steps:
    the service again.
 5. After a successful update, it removes the image that `:previous` pointed to before, and
    dangling spareline images, which were pulled but never applied. It never removes `:current`
-   or `:previous`, or an image that still carries another name, such as one you tagged to keep
+   or `:previous`, or an image that still carries another tag, such as one you tagged to keep
    as a rollback copy.
 
 By default an update applies as soon as the hourly check finds it. To limit updates to a
