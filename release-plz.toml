@@ -23,6 +23,9 @@ name = "spareline"
 changelog_path = "./CHANGELOG.md"
 changelog_update = true
 changelog_include = [
+    "spareline_adb",
     "spareline_core",
+    "spareline_db",
+    "spareline_server",
 ]
 git_tag_enable = true

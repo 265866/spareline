@@ -41,8 +41,20 @@ readme_sections = ["Run it", "Documentation", "License"]
 # crates, is a rule change.
 [workspace.metadata.policy.internal_dependencies]
 spareline_core = []
-spareline = [
+spareline_adb = []
+spareline_db = [
     "spareline_core",
+]
+spareline_server = [
+    "spareline_adb",
+    "spareline_core",
+    "spareline_db",
+]
+spareline = [
+    "spareline_adb",
+    "spareline_core",
+    "spareline_db",
+    "spareline_server",
 ]
 
 [workspace.package]
