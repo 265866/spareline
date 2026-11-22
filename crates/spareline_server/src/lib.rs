@@ -16,6 +16,7 @@ mod event_log;
 mod fake_adb;
 pub mod healthcheck;
 mod login_limiter;
+pub mod monitor;
 mod policy_check;
 mod shell_text;
 pub mod smoke;
