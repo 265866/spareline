@@ -33,6 +33,12 @@ pub enum HealthcheckError {
         /// How long the check waited.
         limit: Duration,
     },
+    /// The service closed the connection without answering, as it does while shutting down.
+    #[error("{address} closed the connection without answering")]
+    Closed {
+        /// The address asked.
+        address: SocketAddr,
+    },
     /// The answer wasn't HTTP, or ended before its status line.
     #[error("{address} answered something other than HTTP")]
     NotHttp {
@@ -72,10 +78,15 @@ impl Healthcheck {
     ///
     /// Returns why the service isn't healthy.
     pub fn run(self) -> Result<(), HealthcheckError> {
+        self.ask(Instant::now)
+    }
+
+    /// Runs the check against the clock `now`, which tests drive.
+    fn ask<C: FnMut() -> Instant>(self, mut now: C) -> Result<(), HealthcheckError> {
         use std::io::{Read as _, Write as _};
 
         let limit = self.timeout;
-        let deadline = Instant::now() + limit;
+        let deadline = now() + limit;
         let address = SocketAddr::from((Ipv4Addr::LOCALHOST, self.port));
         let failed = |source: io::Error| {
             let kind = source.kind();
@@ -85,9 +96,9 @@ impl Healthcheck {
                 HealthcheckError::Unreachable { address, source }
             }
         };
-        let left = || {
+        let mut left = || {
             deadline
-                .checked_duration_since(Instant::now())
+                .checked_duration_since(now())
                 .filter(|left| !left.is_zero())
                 .ok_or(HealthcheckError::Timeout { address, limit })
         };
@@ -113,6 +124,9 @@ impl Healthcheck {
             }
             stream.set_read_timeout(Some(left()?)).map_err(failed)?;
             let read = stream.read(&mut chunk).map_err(failed)?;
+            if read == 0 && head.is_empty() {
+                return Err(HealthcheckError::Closed { address });
+            }
             if read == 0 {
                 return Err(HealthcheckError::NotHttp { address });
             }
@@ -182,7 +196,7 @@ mod tests {
     use std::io::{Read as _, Write as _};
     use std::net::TcpListener;
     use std::sync::mpsc::{self, Receiver};
-    use std::thread;
+    use std::{iter, thread};
 
     use super::*;
 
@@ -192,9 +206,10 @@ mod tests {
         request: Receiver<Vec<u8>>,
     }
 
-    /// A server that answers one connection with `answer`, sent in `parts` pieces with `pause`
-    /// between them, and reports the request it read.
-    fn serve(answer: &'static [u8], parts: usize, pause: Duration) -> Served {
+    /// A server that answers one connection with `answer`. With `pace`, it sends one byte each
+    /// time the paced test signals, and nothing more until it does; without, it sends it all at
+    /// once. It reports the request it read.
+    fn serve(answer: &'static [u8], pace: Option<Receiver<()>>) -> Served {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let port = listener.local_addr().unwrap().port();
         let (seen, request) = mpsc::channel();
@@ -203,19 +218,21 @@ mod tests {
             let mut buffer = [0; 1024];
             let read = stream.read(&mut buffer).unwrap();
             seen.send(buffer[..read].to_vec()).unwrap();
-            let size = answer.len().div_ceil(parts.max(1)).max(1);
-            for piece in answer.chunks(size) {
-                if stream.write_all(piece).is_err() {
+            let Some(pace) = pace else {
+                stream.write_all(answer).unwrap();
+                return;
+            };
+            for byte in answer {
+                if pace.recv().is_err() || stream.write_all(&[*byte]).is_err() {
                     return;
                 }
-                thread::sleep(pause);
             }
         });
         Served { port, request }
     }
 
     fn check(answer: &'static [u8]) -> Result<(), HealthcheckError> {
-        let Served { port, request } = serve(answer, 1, Duration::ZERO);
+        let Served { port, request } = serve(answer, None);
         let result = Healthcheck::new(port).run();
         let sent = request.recv().unwrap();
         assert!(
@@ -255,10 +272,10 @@ mod tests {
 
     #[test]
     fn a_short_or_strange_answer_is_not_http() {
-        for answer in [&b"HTTP/1.0 20"[..], b"ok", b"SSH-2.0-OpenSSH_9.9\r\n"] {
-            let leaked: &'static [u8] = Box::leak(answer.to_vec().into_boxed_slice());
+        let answers: [&'static [u8]; 3] = [b"HTTP/1.0 20", b"ok", b"SSH-2.0-OpenSSH_9.9\r\n"];
+        for answer in answers {
             assert!(
-                matches!(check(leaked), Err(HealthcheckError::NotHttp { .. })),
+                matches!(check(answer), Err(HealthcheckError::NotHttp { .. })),
                 "{answer:?}"
             );
         }
@@ -278,19 +295,57 @@ mod tests {
 
     #[test]
     fn a_trickling_answer_still_ends_within_the_deadline() {
+        let (signal, pace) = mpsc::channel();
         let Served {
             port,
             request: _request,
-        } = serve(b"HTTP/1.1 200 OK\r\n\r\n", 19, Duration::from_millis(60));
-        let check = Healthcheck {
-            port,
-            timeout: Duration::from_millis(300),
+        } = serve(b"HTTP/1.1 200 OK\r\n\r\n", Some(pace));
+        let check = Healthcheck::new(port);
+        let start = Instant::now();
+        let mut elapsed = Duration::ZERO;
+        let clock = || {
+            let at = start + elapsed;
+            elapsed += TIMEOUT / 4;
+            signal
+                .send(())
+                .expect("the stand-in waits for the next byte");
+            at
         };
-        let error = check.run().unwrap_err();
-        assert!(matches!(error, HealthcheckError::Timeout { .. }), "{error}");
+        let error = check.ask(clock).unwrap_err();
         assert!(
-            error.to_string().ends_with("gave no answer within 300ms"),
+            matches!(error, HealthcheckError::Timeout { .. }),
+            "a byte per clock reading never completes the status line within the deadline: {error}"
+        );
+    }
+
+    #[test]
+    fn an_upgrade_answer_fails() {
+        let error = check(b"HTTP/1.1 101 Switching Protocols\r\n\r\n").unwrap_err();
+        assert!(
+            matches!(error, HealthcheckError::Status { status: 101 }),
             "{error}"
+        );
+    }
+
+    #[test]
+    fn an_interim_answer_with_endless_headers_is_not_http() {
+        let mut answer = b"HTTP/1.1 100 Continue\r\n".to_vec();
+        answer.extend(iter::repeat_n(b'x', MAX_HEAD + 10));
+        let answer: &'static [u8] = answer.leak();
+        assert!(matches!(
+            check(answer),
+            Err(HealthcheckError::NotHttp { .. })
+        ));
+    }
+
+    #[test]
+    fn an_empty_answer_says_the_connection_closed() {
+        let error = check(b"").unwrap_err();
+        assert!(matches!(error, HealthcheckError::Closed { .. }), "{error}");
+        assert!(
+            error
+                .to_string()
+                .ends_with("closed the connection without answering")
         );
     }
 

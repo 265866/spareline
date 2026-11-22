@@ -106,7 +106,7 @@ impl<F: Fn(&str) -> Option<OsString>> Reader<F> {
                     variable,
                     format!(
                         "expected text, got bytes that aren't UTF-8: \"{}\"",
-                        raw.display()
+                        raw.to_string_lossy().escape_debug()
                     ),
                 );
                 None

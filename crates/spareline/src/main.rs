@@ -55,7 +55,8 @@ impl Invocation {
         match matches.subcommand_name() {
             Some("smoke") => Self::Smoke,
             Some("healthcheck") => Self::Healthcheck,
-            Some(_) | None => Self::Service,
+            Some(name) => unreachable!("clap accepted the command {name}, which nothing runs"),
+            None => Self::Service,
         }
     }
 }
