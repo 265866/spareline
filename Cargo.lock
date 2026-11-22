@@ -3,10 +3,41 @@
 version = 4
 
 [[package]]
+name = "anstyle"
+version = "1.0.14"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "940b3a0ca603d1eade50a4846a2afffd5ef57a9feac2c0e2ec2e14f9ead76000"
+
+[[package]]
 name = "bytes"
 version = "1.12.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "776dfebd015e2d8732c684a2c71003674ccb49457b539b9e82151ba38e96dd7c"
+
+[[package]]
+name = "clap"
+version = "4.6.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "844c5c0b65be192cb68d570cca1b21a6444431d24e39c084dc0336177015337c"
+dependencies = [
+ "clap_builder",
+]
+
+[[package]]
+name = "clap_builder"
+version = "4.6.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ec0797fb7aeb1406c84efac526901f7ec3ead2124f946b494e72879d4b54704d"
+dependencies = [
+ "anstyle",
+ "clap_lex",
+]
+
+[[package]]
+name = "clap_lex"
+version = "1.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e0921b3876b3a1df8a1c9f912e7f94342458022c2e84288015893d83c4d62a79"
 
 [[package]]
 name = "itoa"
@@ -117,7 +148,11 @@ dependencies = [
 name = "spareline"
 version = "0.1.0"
 dependencies = [
+ "clap",
+ "spareline_adb",
  "spareline_core",
+ "spareline_server",
+ "tokio",
 ]
 
 [[package]]
@@ -132,6 +167,15 @@ dependencies = [
 [[package]]
 name = "spareline_core"
 version = "0.1.0"
+
+[[package]]
+name = "spareline_server"
+version = "0.1.0"
+dependencies = [
+ "spareline_adb",
+ "thiserror",
+ "tokio",
+]
 
 [[package]]
 name = "syn"
