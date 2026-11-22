@@ -7,6 +7,7 @@ use std::path::Path;
 use rusqlite::{Connection, OpenFlags};
 use spareline_core::Timestamp;
 
+use crate::accounts::Accounts;
 use crate::database_error::DatabaseError;
 use crate::migration::{AppliedMigration, MIGRATION_FILES, Migration};
 use crate::resolve;
@@ -93,6 +94,11 @@ impl Database {
         let migrations = Migration::ordered(&MIGRATION_FILES)?;
         migrate(&mut connection, &migrations, None, &clock, |_| {})?;
         Ok(Self { connection })
+    }
+
+    /// Users, sessions and API keys.
+    pub fn accounts(&mut self) -> Accounts<'_> {
+        Accounts::new(&mut self.connection)
     }
 }
 
