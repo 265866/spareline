@@ -1,5 +1,7 @@
 //! The `users` and `keys` commands, which manage who can sign in.
 
+use std::num::ParseIntError;
+
 use spareline_core::Timestamp;
 use spareline_db::{AccountError, Database, KeyScope, Passwords};
 
@@ -180,13 +182,36 @@ pub fn run_keys(
     settle(outcome)
 }
 
-/// Turns a refusal into an outcome with code 1, and passes a database failure on.
+/// Turns a refusal, one of spareline-old's `AuthError`s, into an outcome with code 1, and passes
+/// any other failure on, as spareline-old rethrew it.
 fn settle(outcome: Result<Vec<String>, AccountError>) -> Result<CommandOutcome, AccountError> {
     match outcome {
         Ok(lines) => Ok(CommandOutcome::done(lines)),
-        Err(AccountError::Database(error)) => Err(AccountError::Database(error)),
-        Err(refusal) => Ok(CommandOutcome::refused(refusal.to_string())),
+        Err(refusal) if refusal.is_user_error() => Ok(CommandOutcome::refused(refusal.to_string())),
+        Err(failure) => Err(failure),
     }
+}
+
+/// Reads a key scope as `keys add` takes it: `read` or `full`.
+///
+/// # Errors
+///
+/// Returns the message clap shows for anything else.
+pub fn parse_scope(text: &str) -> Result<KeyScope, String> {
+    KeyScope::from_name(text).ok_or_else(|| format!("a key scope is read or full, not {text:?}"))
+}
+
+/// Reads a key id as `keys revoke` takes it: ASCII digits only.
+///
+/// # Errors
+///
+/// Returns the message clap shows for anything else, or for a number too large for an id.
+pub fn parse_key_id(text: &str) -> Result<i64, String> {
+    if text.is_empty() || !text.bytes().all(|byte| byte.is_ascii_digit()) {
+        return Err(format!("expected a key id of digits, got {text:?}"));
+    }
+    text.parse()
+        .map_err(|error: ParseIntError| error.to_string())
 }
 
 #[cfg(test)]
@@ -350,6 +375,41 @@ mod tests {
                 },
             ),
             CommandOutcome::refused("no user nobody".to_owned())
+        );
+    }
+
+    #[test]
+    fn a_failure_that_is_not_a_refusal_is_passed_on() {
+        let failure = AccountError::Random {
+            message: "out of memory".to_owned(),
+        };
+        assert!(!failure.is_user_error(), "{failure:?}");
+        assert!(settle(Err(failure)).is_err());
+        let refusal = AccountError::NoApiKey { id: 3 };
+        assert_eq!(
+            settle(Err(refusal)).unwrap(),
+            CommandOutcome::refused("no API key 3".to_owned())
+        );
+    }
+
+    #[test]
+    fn scopes_and_key_ids_parse_as_the_live_build_does() {
+        assert_eq!(parse_scope("read"), Ok(KeyScope::Read));
+        assert_eq!(parse_scope("full"), Ok(KeyScope::Full));
+        assert_eq!(
+            parse_scope("Full"),
+            Err("a key scope is read or full, not \"Full\"".to_owned())
+        );
+        assert_eq!(parse_key_id("007"), Ok(7));
+        for bad in ["", "x", "+1", "1.5", " 1"] {
+            assert_eq!(
+                parse_key_id(bad),
+                Err(format!("expected a key id of digits, got {bad:?}"))
+            );
+        }
+        assert_eq!(
+            parse_key_id("99999999999999999999"),
+            Err("number too large to fit in target type".to_owned())
         );
     }
 }

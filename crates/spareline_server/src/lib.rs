@@ -14,7 +14,9 @@ pub mod smoke;
 pub mod stream_cursor;
 mod web_files;
 
-pub use account_commands::{CommandOutcome, KeysCommand, UsersCommand, run_keys, run_users};
+pub use account_commands::{
+    CommandOutcome, KeysCommand, UsersCommand, parse_key_id, parse_scope, run_keys, run_users,
+};
 pub use api_error::ApiError;
 pub use config::{Config, EnvError, EnvIssue, SmokeSettings};
 pub use login_limiter::LoginLimiter;

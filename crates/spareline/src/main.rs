@@ -2,7 +2,6 @@
 
 use std::ffi::OsString;
 use std::io::{self, Write};
-use std::num::ParseIntError;
 use std::path::PathBuf;
 use std::process::ExitCode;
 use std::{env, fs};
@@ -114,14 +113,14 @@ fn keys_command() -> Command {
                         "read|full",
                         "read: GET requests only; full: all but keys and passwords",
                     )
-                    .value_parser(parse_scope),
+                    .value_parser(spareline_server::parse_scope),
                 ),
         )
         .subcommand(Command::new("list").about("List every key"))
         .subcommand(
             Command::new("revoke").about("Revoke a key").arg(
                 positional("id", "ID", "The key's id, as keys list prints it")
-                    .value_parser(parse_key_id),
+                    .value_parser(spareline_server::parse_key_id),
             ),
         )
 }
@@ -152,20 +151,6 @@ fn backup_command() -> Command {
                 .conflicts_with_all(["source", "destination"])
                 .help("Check FILE with PRAGMA integrity_check instead"),
         )
-}
-
-/// Reads a key scope as `keys add` takes it.
-fn parse_scope(text: &str) -> Result<KeyScope, String> {
-    KeyScope::from_name(text).ok_or_else(|| format!("a key scope is read or full, not {text:?}"))
-}
-
-/// Reads a key id as `keys revoke` takes it: digits only.
-fn parse_key_id(text: &str) -> Result<i64, String> {
-    if text.is_empty() || !text.bytes().all(|byte| byte.is_ascii_digit()) {
-        return Err(format!("expected a key id of digits, got {text:?}"));
-    }
-    text.parse()
-        .map_err(|error: ParseIntError| error.to_string())
 }
 
 /// What `spareline backup` asks for.
@@ -369,24 +354,30 @@ fn run_healthcheck() -> io::Result<ExitCode> {
 fn run_accounts(
     command: impl FnOnce(&mut Database, Timestamp) -> Result<CommandOutcome, AccountError>,
 ) -> io::Result<ExitCode> {
-    let data_dir = Config::data_dir_from_env(environment);
-    let outcome = fs::create_dir_all(&data_dir)
-        .map_err(|error| {
-            format!(
-                "cannot create the directory {}: {error}",
-                data_dir.display()
-            )
+    let outcome = Config::data_dir_from_env(environment)
+        .map_err(|error| error.to_string())
+        .and_then(|data_dir| {
+            fs::create_dir_all(&data_dir)
+                .map_err(|error| {
+                    format!(
+                        "cannot create the directory {}: {error}",
+                        data_dir.display()
+                    )
+                })
+                .map(|()| data_dir)
         })
-        .and_then(|()| {
-            let mut stderr = io::stderr().lock();
-            Database::open(
+        .and_then(|data_dir| {
+            let mut applied = Vec::new();
+            let opened = Database::open(
                 &data_dir.join("spareline.db"),
                 Timestamp::now,
-                |applied: &AppliedMigration| {
-                    drop(writeln!(stderr, "{}", applied.log_line()));
-                },
-            )
-            .map_err(|error| error.to_string())
+                |migration: &AppliedMigration| applied.push(migration.log_line()),
+            );
+            let mut stderr = io::stderr().lock();
+            for line in &applied {
+                writeln!(stderr, "{line}").map_err(|error| error.to_string())?;
+            }
+            opened.map_err(|error| error.to_string())
         })
         .and_then(|mut database| {
             command(&mut database, Timestamp::now()).map_err(|error| error.to_string())

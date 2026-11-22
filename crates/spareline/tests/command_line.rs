@@ -141,6 +141,7 @@ fn users_and_keys_manage_the_database_in_data_dir() {
     let refused = run_in(&data, &["users", "remove", "nobody"]);
     assert_eq!(refused.status.code(), Some(1), "{refused:?}");
     assert_eq!(stdout(&refused), "no user nobody\n");
+    assert_eq!(stderr(&refused), "", "a refusal goes to stdout only");
 }
 
 #[test]
@@ -155,6 +156,7 @@ fn bad_command_arguments_fail_with_exit_2_as_the_live_build_does() {
         "{revoke:?}"
     );
     let too_large = run_in(&data, &["keys", "revoke", "99999999999999999999"]);
+    assert_eq!(too_large.status.code(), Some(2), "{too_large:?}");
     assert!(
         stderr(&too_large).starts_with(
             "error: invalid value '99999999999999999999' for '<ID>': number too large to fit in \

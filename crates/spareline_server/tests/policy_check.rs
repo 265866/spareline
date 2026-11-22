@@ -211,13 +211,57 @@ fn a_profile_without_device_rules_prints_fewer_rules() {
 #[test]
 fn a_leading_byte_order_mark_is_dropped_before_parsing_as_text_decoder_did() {
     block_on(async {
+        let read = RECORDED.trim_start_matches('\n');
         let mut stdout = "\u{feff}".as_bytes().to_vec();
-        stdout.extend_from_slice(RECORDED.as_bytes());
+        stdout.extend_from_slice(read.as_bytes());
         let stand_in_server = stand_in(stdout.clone()).await;
         let report = check(&stand_in_server, B30_PATH, B30).await.unwrap();
-        let [read, rest] = split_read_line(&report);
-        assert_read_line(read, stdout.len());
-        assert_eq!(rest, B30_LINES);
+        let [read_line, rest] = split_read_line(&report);
+        assert_read_line(read_line, stdout.len());
+        assert_eq!(
+            rest, B30_LINES,
+            "with the mark left in, the first section's marker isn't recognized"
+        );
+    });
+}
+
+/// The recorded read with mobile traffic on two SIMs in the last day: 5000 bytes received and
+/// 700 sent on sub 1, and 50 received on sub 2.
+fn with_traffic() -> String {
+    let now = 1_792_659_282;
+    let row = |sub: u8, uid: u32, received: u32, sent: u32| {
+        format!(
+            "  ident=[{{type=0, ratType=13, subscriberId=310260..., metered=true, \
+             defaultNetwork=true, oemManaged=OEM_NONE, subId={sub}}}] uid={uid} set=DEFAULT \
+             tag=0x0\n    NetworkStatsHistory: bucketDuration=7200\n      st={} rb={received} \
+             rp=900 tb={sent} tp=0 op=0\n",
+            now - 3600
+        )
+    };
+    let index = RECORDED
+        .find("\nInterfaceMapUpdater:")
+        .expect("the recorded netstats has an interface map")
+        + 1;
+    format!(
+        "{}{}{}{}",
+        &RECORDED[..index],
+        row(1, 10_123, 5000, 700),
+        row(2, 10_124, 50, 0),
+        &RECORDED[index..]
+    )
+}
+
+#[test]
+fn the_data_watch_sums_each_sims_traffic_as_spareline_old_did() {
+    block_on(async {
+        let stand_in_server = stand_in(with_traffic().into_bytes()).await;
+        let report = check(&stand_in_server, NO_DATA_PATH, NO_DATA)
+            .await
+            .unwrap();
+        assert_eq!(
+            report.lines().last(),
+            Some("data watch: sub 1: 5700 bytes, sub 2: 50 bytes")
+        );
     });
 }
 
