@@ -5,6 +5,8 @@ use std::time::Duration;
 
 use spareline_core::Timestamp;
 
+use crate::http::js_text;
+
 /// How many failures inside [`WINDOW`] lock a name out.
 const MAX_FAILURES: usize = 10;
 
@@ -30,10 +32,12 @@ impl LoginLimiter {
         Self::default()
     }
 
-    /// The key for a user name: `name:` and the trimmed name in lowercase.
+    /// The key for a user name: `name:` and the name in lowercase, trimmed as JavaScript trims,
+    /// as the account lookup trims it, so every spelling that reaches one account shares one
+    /// allowance.
     #[must_use]
     pub fn key_for(name: &str) -> String {
-        format!("name:{}", name.trim().to_lowercase())
+        format!("name:{}", js_text::trim(name).to_lowercase())
     }
 
     /// Whole seconds to wait when any of `keys` is over the limit at `now`, otherwise `None`.
@@ -139,6 +143,17 @@ mod tests {
             None,
             "the oldest failure has expired"
         );
+    }
+
+    #[test]
+    fn names_trimmed_as_the_account_lookup_trims_them_share_a_key() {
+        for spelling in ["\u{feff}alice", "alice\u{3000}", "\u{a0}Alice\u{2028}"] {
+            assert_eq!(
+                LoginLimiter::key_for(spelling),
+                "name:alice",
+                "{spelling:?}"
+            );
+        }
     }
 
     #[test]

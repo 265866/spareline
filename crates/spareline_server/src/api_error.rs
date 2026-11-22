@@ -1,10 +1,14 @@
 //! The error body every API route answers with.
 
+use std::fmt::Display;
+
 use axum::Json;
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use serde::Serialize;
 use thiserror::Error;
+
+use crate::event_log::EventLog;
 
 /// A failed API request: a status code and the `{"error": "..."}` body clients show.
 #[derive(Clone, Debug, Error, PartialEq, Eq)]
@@ -64,6 +68,18 @@ impl ApiError {
     /// `limit: expected an integer from 1 to 500, got "0"`.
     pub fn invalid(message: String) -> Self {
         Self::new(StatusCode::UNPROCESSABLE_ENTITY, message)
+    }
+
+    /// 500, for a failure inside the server, such as the database's. The cause goes to the log
+    /// as a `request-failed` line; the client sees only `internal error`.
+    pub fn internal(log: &EventLog, cause: &dyn Display) -> Self {
+        log.event("request-failed")
+            .field("error", &cause.to_string())
+            .write();
+        Self::new(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "internal error".to_owned(),
+        )
     }
 
     /// The status code.
