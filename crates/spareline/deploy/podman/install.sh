@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# First install, and safe to rerun: links the units, starts the adb server and
+# First install, and safe to rerun: installs the units, starts the adb server and
 # spareline, waits for healthy, and enables the update and backup timers.
 # shellcheck source=common.sh
 source "$(dirname "$(realpath "$0")")/common.sh"
@@ -11,7 +11,7 @@ if ! run podman image exists "$CURRENT"; then
   pull_upstream
   run podman tag "$UPSTREAM" "$CURRENT"
 fi
-link_units
+install_units
 start_adb_server
 # No phone may have allowed this host's new adb key yet, so a first install
 # only needs the image to reach the adb server.
