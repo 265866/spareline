@@ -116,14 +116,15 @@ impl AdbClient {
             let mut stream = self.open_device_service(serial, &service).await?;
             let mut output = ShellOutput::default();
             loop {
-                let Some(ShellHeader { id, length }) = ShellHeader::read(&mut stream).await? else {
-                    return Err(AdbError::new(
+                let header = ShellHeader::read(&mut stream).await;
+                let Some(ShellHeader { id, length }) = header.map_err(ended_early)? else {
+                    return Err(ended_early(AdbError::new(
                         AdbErrorKind::Closed,
-                        "the shell ended without reporting an exit code (device disconnected?)"
-                            .to_owned(),
-                    ));
+                        String::new(),
+                    )));
                 };
                 let data = frame::read_exact(&mut stream, length).await?;
+                frame::check_output(output.stdout.len() + output.stderr.len() + data.len())?;
                 match id {
                     frame::SHELL_STDOUT => output.stdout.extend(data),
                     frame::SHELL_STDERR => output.stderr.extend(data),
@@ -184,13 +185,20 @@ impl AdbClient {
     /// Returns an error when the phone isn't attached, nothing listens there, or the setup
     /// times out.
     pub async fn open_stream(&self, serial: &str, service: &str) -> Result<TcpStream, AdbError> {
-        self.bounded(async {
+        let setup = async {
             let mut stream = self.connect().await?;
             frame::request(&mut stream, &format!("host:transport:{serial}")).await?;
             frame::request(&mut stream, service).await?;
             Ok(stream)
-        })
-        .await
+        };
+        time::timeout(self.call_timeout, setup)
+            .await
+            .unwrap_or_else(|_| {
+                Err(AdbError::new(
+                    AdbErrorKind::Timeout,
+                    format!("opening {service} on {serial} timed out"),
+                ))
+            })
     }
 
     /// Writes `data` to `remote_path` on the phone with the `sync:` protocol, as a regular file
@@ -207,6 +215,12 @@ impl AdbClient {
         mode: u32,
         modified: SystemTime,
     ) -> Result<(), AdbError> {
+        if remote_path.contains('\0') {
+            return Err(AdbError::new(
+                AdbErrorKind::Protocol,
+                "adb paths cannot contain NUL bytes".to_owned(),
+            ));
+        }
         self.bounded(async {
             let mut stream = self.open_device_service(serial, "sync:").await?;
             let file_mode = 0o100_000 | (mode & 0o7777);
@@ -284,5 +298,18 @@ impl AdbClient {
                     "the adb operation timed out".to_owned(),
                 ))
             })
+    }
+}
+
+/// A shell connection that closed before its exit packet, whether cleanly or mid-header, means
+/// the phone went away; other errors pass through.
+fn ended_early(error: AdbError) -> AdbError {
+    if error.kind() == AdbErrorKind::Closed {
+        AdbError::new(
+            AdbErrorKind::Closed,
+            "the shell ended without reporting an exit code (device disconnected?)".to_owned(),
+        )
+    } else {
+        error
     }
 }

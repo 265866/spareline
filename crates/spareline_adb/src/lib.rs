@@ -10,6 +10,7 @@ mod device_entry;
 mod device_tracker;
 mod endpoint;
 mod frame;
+mod frame_reader;
 mod shell_header;
 mod shell_output;
 mod shell_stream;

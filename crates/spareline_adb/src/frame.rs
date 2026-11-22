@@ -12,6 +12,10 @@ use crate::adb_error::{AdbError, AdbErrorKind};
 /// let a broken peer grow memory without bound.
 pub(crate) const MAX_FRAME: usize = 4 * 1024 * 1024;
 
+/// The most output one command may return. A phone's or server's runaway output would otherwise
+/// grow memory until the 700 MB container dies; no command spareline runs comes close.
+pub(crate) const MAX_OUTPUT: usize = 32 * 1024 * 1024;
+
 /// The largest `DATA` record `sync:` accepts.
 pub(crate) const SYNC_DATA_MAX: usize = 64 * 1024;
 
@@ -73,10 +77,7 @@ pub(crate) async fn read_exact(stream: &mut TcpStream, length: usize) -> Result<
             .await
             .map_err(|error| closed(&error))?;
         if read == 0 {
-            return Err(AdbError::new(
-                AdbErrorKind::Closed,
-                format!("connection closed after {filled} of {length} expected bytes"),
-            ));
+            return Err(closed_early(filled, length));
         }
         filled += read;
     }
@@ -88,27 +89,58 @@ pub(crate) async fn read_exact_or_end(
     stream: &mut TcpStream,
     length: usize,
 ) -> Result<Option<Vec<u8>>, AdbError> {
-    let mut first = [0; 1];
-    let read = stream
-        .read(&mut first)
-        .await
-        .map_err(|error| closed(&error))?;
-    if read == 0 {
-        return Ok(None);
+    let mut buffer = vec![0; length];
+    let mut filled = 0;
+    while filled < length {
+        let read = stream
+            .read(&mut buffer[filled..])
+            .await
+            .map_err(|error| closed(&error))?;
+        if read == 0 {
+            if filled == 0 {
+                return Ok(None);
+            }
+            return Err(closed_early(filled, length));
+        }
+        filled += read;
     }
-    let mut out = vec![first[0]];
-    out.extend(read_exact(stream, length - 1).await?);
-    Ok(Some(out))
+    Ok(Some(buffer))
 }
 
-/// Everything the peer sends until it closes.
+/// Everything the peer sends until it closes, refusing more than [`MAX_OUTPUT`] bytes.
 pub(crate) async fn read_to_end(stream: &mut TcpStream) -> Result<Vec<u8>, AdbError> {
     let mut out = Vec::new();
-    stream
-        .read_to_end(&mut out)
-        .await
-        .map_err(|error| closed(&error))?;
-    Ok(out)
+    let mut chunk = vec![0; 64 * 1024];
+    loop {
+        let read = stream
+            .read(&mut chunk)
+            .await
+            .map_err(|error| closed(&error))?;
+        if read == 0 {
+            return Ok(out);
+        }
+        out.extend_from_slice(&chunk[..read]);
+        check_output(out.len())?;
+    }
+}
+
+/// Fails once a command's output passes [`MAX_OUTPUT`].
+pub(crate) fn check_output(length: usize) -> Result<(), AdbError> {
+    if length > MAX_OUTPUT {
+        return Err(AdbError::new(
+            AdbErrorKind::Protocol,
+            format!("refusing more than {MAX_OUTPUT} bytes of command output"),
+        ));
+    }
+    Ok(())
+}
+
+/// The error for a peer that closed after `filled` of `length` expected bytes.
+pub(crate) fn closed_early(filled: usize, length: usize) -> AdbError {
+    AdbError::new(
+        AdbErrorKind::Closed,
+        format!("connection closed after {filled} of {length} expected bytes"),
+    )
 }
 
 /// One length-prefixed string, as the server sends after `FAIL`, for `host:version` and for each
@@ -206,7 +238,7 @@ pub(crate) async fn read_sync_status(stream: &mut TcpStream, what: &str) -> Resu
     }
 }
 
-fn closed(error: &io::Error) -> AdbError {
+pub(crate) fn closed(error: &io::Error) -> AdbError {
     AdbError::new(AdbErrorKind::Closed, error.to_string())
 }
 
@@ -217,6 +249,14 @@ mod tests {
     #[test]
     fn a_request_is_its_hex_length_then_the_payload() {
         assert_eq!(encode_request("host:version").unwrap(), b"000chost:version");
+    }
+
+    #[test]
+    fn a_request_counts_its_length_in_utf8_bytes() {
+        assert_eq!(encode_request("").unwrap(), b"0000");
+        assert_eq!(encode_request("é").unwrap(), "0002é".as_bytes());
+        let longest = "x".repeat(0xff_ff);
+        assert_eq!(&encode_request(&longest).unwrap()[..4], b"ffff");
     }
 
     #[test]

@@ -176,6 +176,17 @@ mod tests {
     }
 
     #[test]
+    fn reads_every_line_of_a_list() {
+        let entries = DeviceEntry::parse_list(
+            "SPARELINE00001         device usb:1-1 transport_id:1\n\
+             SPARELINE00002         unauthorized usb:1-2 transport_id:2\n",
+        );
+        let states: Vec<DeviceState> = entries.iter().map(|entry| entry.state).collect();
+        assert_eq!(states, [DeviceState::Device, DeviceState::Unauthorized]);
+        assert_eq!(entries[1].usb.as_deref(), Some("1-2"));
+    }
+
+    #[test]
     fn keeps_a_multi_word_state() {
         let entries = DeviceEntry::parse_list(
             "SPARELINE00002 no permissions (missing udev rules? user is in the plugdev group); \
