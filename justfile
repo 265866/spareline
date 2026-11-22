@@ -20,7 +20,7 @@ lints_nightly := "nightly-2026-11-12"
 
 # The trellis commit the lints in Cargo.toml and the checker below come from. `uvx copier update`
 # moves both.
-trellis_rev := "0260cb82b1c0c85ebbd697cae2514a612860b3ce"
+trellis_rev := "ac4a577aef824dd0fec414a30257cf22cdb94530"
 
 # rustdoc warnings fail `just docs` and the doctests. Cargo reads `CARGO_ENCODED_RUSTDOCFLAGS`
 # before `RUSTDOCFLAGS`, so a caller's setting of either, even an empty one, can't drop the flag.
