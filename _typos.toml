@@ -5,3 +5,5 @@ extend-exclude = ["Cargo.lock"]
 # Android's persist.radio.multisim.config value for a triple-SIM, triple-standby phone, which the
 # identity probe reads.
 tsts = "tsts"
+# The user-mode network stack Podman's pasta networking comes from, which the deploy kit needs.
+passt = "passt"
