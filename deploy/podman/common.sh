@@ -120,15 +120,23 @@ wait_healthy() {
   fail 'spareline did not become healthy.'
 }
 
-# Removes the given image, by ID, when it is neither :current nor :previous,
-# then dangling spareline images (pulled but never applied, such as :latest
-# images replaced before a maintenance window). Only images built from this
-# repository match the label filter, and tagged images are never dangling.
+# Removes the given image, by ID, when it is neither :current nor :previous and
+# no name is left on it, then dangling spareline images (pulled but never
+# applied, such as :latest images replaced before a maintenance window). An
+# image that still carries a name, such as one an operator added to keep a
+# rollback copy, stays: removing it by ID would take that name with it. Only
+# images built from this repository match the label filter, and tagged images
+# are never dangling.
 remove_unused_images() {
-  local retired=$1 keep
+  local retired=$1 keep names
   keep=" $(image_id "$CURRENT") $(image_id "$PREVIOUS" 2>/dev/null || true) "
   if [[ -n "$retired" && "$keep" != *" $retired "* ]]; then
-    run podman rmi "$retired" >/dev/null || log "Could not remove the retired image $retired."
+    names=$(run podman image inspect --format '{{range .RepoTags}}{{.}} {{end}}' "$retired" 2>/dev/null || true)
+    if [[ -n "${names// /}" ]]; then
+      log "Kept the retired image $retired, which still carries: ${names% }"
+    else
+      run podman rmi "$retired" >/dev/null || log "Could not remove the retired image $retired."
+    fi
   fi
   run podman image prune --force --filter label=org.opencontainers.image.source=https://github.com/265866/spareline >/dev/null ||
     log 'Could not prune dangling spareline images.'
@@ -136,7 +144,15 @@ remove_unused_images() {
 
 start_adb_server() { run systemctl --user enable --now "$ADB_SERVICE"; }
 enable_timers() { run systemctl --user enable --now "${TIMERS[@]}"; }
-show_units() { run systemctl --user is-active "$ADB_SERVICE" "$SERVICE" "${TIMERS[@]}"; }
+# One unit per call: `systemctl is-active a b` exits 0 when any one of them is active.
+show_units() {
+  local unit stopped=0
+  for unit in "$ADB_SERVICE" "$SERVICE" "${TIMERS[@]}"; do
+    printf '%s: ' "$unit"
+    run systemctl --user is-active "$unit" || stopped=1
+  done
+  return "$stopped"
+}
 show_timers() { run systemctl --user list-timers "${TIMERS[@]}" --no-pager; }
 
 # Keeps the newest $2 files matching $1 in the backup directory.
