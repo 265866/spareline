@@ -2,8 +2,10 @@ name: Release
 
 # On every push to main, release-plz either tags a release (when the push is a merged release PR)
 # or opens and updates the release PR. A tagged release builds the container image from its tag,
-# pushes it by version, attests and signs it, verifies both, and only then moves the minor and
-# `latest` tags to it and publishes the GitHub release.
+# pushes it by its digest alone, attests and signs it, verifies both, and only then tags it with its
+# version, minor and `latest` and publishes the GitHub release, so no tag names an image that isn't
+# signed. Sigstore's transparency log fails at times, so attesting and signing try three times. If a
+# job fails anyway, re-running it builds and pushes a new digest, which the tags then name.
 #
 # A PR that GITHUB_TOKEN opens starts no pull_request_target workflow, so the release PR needs the
 # RELEASE_PLZ_TOKEN secret (see docs/maintaining.md) to get its rule-change status.
@@ -100,7 +102,7 @@ jobs:
     needs: release
     if: needs.release.outputs.tag != ''
     runs-on: ubuntu-24.04
-    timeout-minutes: 45
+    timeout-minutes: 60
     permissions:
       contents: write
       packages: write
@@ -151,8 +153,7 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ github.token }}
 
-      # Pushed under its version only. No cache: a cache written by another workflow could change
-      # what ships.
+      # No cache: a cache written by another workflow could change what ships.
       - name: Build and push
         id: build
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
@@ -160,13 +161,42 @@ jobs:
           context: .
           file: Containerfile
           platforms: linux/amd64,linux/arm64
-          push: true
-          tags: ${{ env.IMAGE }}:${{ needs.release.outputs.tag }}
+          # Pushed by its digest alone, so no tag names it until the last step.
+          outputs: type=image,name=${{ env.IMAGE }},push-by-digest=true,name-canonical=true,push=true
           sbom: true
           provenance: mode=max
           no-cache: true
 
+      # Sigstore's transparency log fails at times, so a failed attestation is tried twice more.
       - name: Attest the image
+        id: attest
+        continue-on-error: true
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-name: ${{ env.IMAGE }}
+          subject-digest: ${{ steps.build.outputs.digest }}
+          push-to-registry: true
+
+      - name: Wait before attesting the image again
+        if: steps.attest.outcome == 'failure'
+        run: sleep 60
+
+      - name: Attest the image again
+        id: attest-again
+        if: steps.attest.outcome == 'failure'
+        continue-on-error: true
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-name: ${{ env.IMAGE }}
+          subject-digest: ${{ steps.build.outputs.digest }}
+          push-to-registry: true
+
+      - name: Wait before attesting the image a last time
+        if: steps.attest-again.outcome == 'failure'
+        run: sleep 180
+
+      - name: Attest the image a last time
+        if: steps.attest-again.outcome == 'failure'
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-name: ${{ env.IMAGE }}
@@ -181,23 +211,32 @@ jobs:
           DIGEST: ${{ steps.build.outputs.digest }}
           GH_TOKEN: ${{ github.token }}
         run: |
-          cosign sign --yes "$IMAGE@$DIGEST"
-          cosign verify "$IMAGE@$DIGEST" \
+          # Runs a command up to three times, a minute and then three minutes apart, since
+          # Sigstore's transparency log fails at times.
+          try() {
+            for wait in 0 60 180; do
+              sleep "$wait"
+              "$@" && return
+            done
+            return 1
+          }
+          try cosign sign --yes "$IMAGE@$DIGEST"
+          try cosign verify "$IMAGE@$DIGEST" \
             --certificate-oidc-issuer https://token.actions.githubusercontent.com \
             --certificate-identity "https://github.com/$GITHUB_REPOSITORY/.github/workflows/release.yml@refs/heads/main" \
             > /dev/null
-          gh attestation verify "oci://$IMAGE@$DIGEST" --repo "$GITHUB_REPOSITORY" \
+          try gh attestation verify "oci://$IMAGE@$DIGEST" --repo "$GITHUB_REPOSITORY" \
             --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/release.yml" \
             --source-ref refs/heads/main
 
       # Only a signed and verified digest gets the tags people pull.
-      - name: Move the minor and latest tags
+      - name: Tag the image with its version, minor and latest
         env:
           DIGEST: ${{ steps.build.outputs.digest }}
         run: |
           version=${TAG#v}
           docker buildx imagetools create "$IMAGE@$DIGEST" \
-            --tag "$IMAGE:${version%.*}" --tag "$IMAGE:latest"
+            --tag "$IMAGE:$TAG" --tag "$IMAGE:${version%.*}" --tag "$IMAGE:latest"
 
       # The notes name the digest, which docs/verifying-releases.md tells users to verify and run.
       - name: Publish the release
@@ -230,8 +269,8 @@ jobs:
         with:
           tool: just@1.59.0
 
-      # A token without the access release-plz needs fails it with a bare 403, so this names what the
-      # token lacks, and warns in the token's last 14 days.
+      # A token without the access release-plz needs fails it with a bare 403, so this names what
+      # the token lacks, and warns in the token's last 14 days.
       - name: Check the release token
         env:
           RELEASE_PLZ_TOKEN: ${{ secrets.RELEASE_PLZ_TOKEN }}

@@ -28,7 +28,9 @@ name: Rule changes
 # repositories don't need it.
 
 on:
-  # zizmor: ignore[dangerous-triggers] No job checks out, builds or runs the pull request's code; the job that runs the base branch's code can only read, and the jobs that write statuses run no repository code.
+  # No job checks out, builds or runs the pull request's code; the job that runs the base branch's
+  # code can only read, and the jobs that write statuses run no repository code.
+  # zizmor: ignore[dangerous-triggers]
   pull_request_target:
     types: [opened, synchronize, reopened, edited]
 

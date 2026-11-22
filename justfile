@@ -20,7 +20,7 @@ lints_nightly := "nightly-2026-11-12"
 
 # The trellis commit the lints in Cargo.toml and the checker below come from. `uvx copier update`
 # moves both.
-trellis_rev := "b51371e240c4fc90b38acd12e9d809104f07352b"
+trellis_rev := "33b1aefe2b06ccddd0dec337cb06c275a8b0e2e3"
 
 # rustdoc warnings fail `just docs` and the doctests. Cargo reads `CARGO_ENCODED_RUSTDOCFLAGS`
 # before `RUSTDOCFLAGS`, so a caller's setting of either, even an empty one, can't drop the flag.
@@ -56,9 +56,14 @@ install-tools:
 policy_root := justfile_directory() / "target" / "trellis-policy"
 trellis_policy := "./target/trellis-policy/bin/trellis-policy"
 
+# `--quiet` keeps cargo to its errors. Its warnings here are advice that doesn't apply: to add
+# `policy_root` to `PATH`, though recipes call the binary by its path, and that the toolchain in
+# rust-toolchain.toml builds it, which is the one the project pins. So the first run, which builds
+# the checker, prints nothing but the command for a while.
+#
 # Installs `trellis-policy` at the pinned commit. Cargo skips the build when it is already installed.
 install-policy:
-    cargo install --locked --root "{{ policy_root }}" --git https://github.com/265866/trellis --rev {{ trellis_rev }} trellis-policy
+    cargo install --quiet --locked --root "{{ policy_root }}" --git https://github.com/265866/trellis --rev {{ trellis_rev }} trellis-policy
 
 # Formats the Rust and TOML files.
 fmt:
@@ -138,9 +143,10 @@ _dylint $DYLINT_RUSTFLAGS:
     $ErrorActionPreference = 'Stop'; $stamp = 'target/dylint/trellis-rev'; if (-not (Test-Path -LiteralPath $stamp) -or "$(Get-Content -LiteralPath $stamp -Raw)".Trim() -ne '{{ trellis_rev }}') { if (Test-Path -LiteralPath target/dylint/libraries) { Remove-Item -LiteralPath target/dylint/libraries -Recurse -Force }; New-Item -ItemType Directory -Force -Path target/dylint > $null; Set-Content -LiteralPath $stamp -Value '{{ trellis_rev }}' -NoNewline }
     cargo dylint --all --fail-on-no-libraries -- --locked --workspace --all-targets --all-features
 
-# Runs the tests, then the doctests, which nextest does not run.
 # The flags run ignored tests too, so `#[ignore]` can't skip a test here or in CI even where
 # `disabled_code` doesn't report it.
+#
+# Runs the tests, then the doctests, which nextest does not run.
 test:
     cargo nextest run --locked --workspace --all-features --run-ignored all
     cargo test --locked --workspace --doc --all-features -- --include-ignored
@@ -182,10 +188,15 @@ notices: web-notices
 # gone. The weekly Advisories workflow runs it on `main`; remove such an entry in a rules pull
 # request.
 #
-# Checks that every crate about.toml names is in the dependency graph.
-stale-licenses:
+# An entry in web-licenses.toml for an npm package the web UI doesn't install fails it too, so it
+# installs the packages first.
+#
+# Checks that every crate about.toml names, and every package web-licenses.toml names, is there.
+stale-licenses: web-install install-policy
     #!/usr/bin/env bash
     set -uo pipefail
+    {{ trellis_policy }} stale-web-licenses web-licenses.toml crates/spareline/web/node_modules
+    web=$?
     log=$(cargo about --color never generate --locked --fail about.hbs -o /dev/null 2>&1)
     status=$?
     # Each warning names the entry's line in about.toml on the line after it.
@@ -194,11 +205,14 @@ stale-licenses:
     count=$(grep --count --line-regexp --fixed-strings 'warning: config found for a crate not present in the graph' <<< "$log")
     if [ "$count" -gt 0 ]; then
       stale=$(for line in $lines; do sed -n "${line}p" about.toml; done | tr '\n' ' ' | sed 's/ $//')
-      echo "error: about.toml has $count entries for crates the dependency graph doesn't hold: ${stale:-see above}. Remove each in a rules pull request, unless the code pull request that adds its crate is still open; land that instead." >&2
+      entries="$count entries for crates" each=each
+      if [ "$count" -eq 1 ]; then entries="an entry for a crate" each=it; fi
+      echo "error: about.toml has $entries the dependency graph doesn't hold: ${stale:-see above}. Remove $each in a rules pull request, unless the code pull request that adds its crate is still open; land that instead." >&2
       echo "$log" >&2
       exit 1
     fi
     if [ "$status" -ne 0 ]; then echo "$log" >&2; exit "$status"; fi
+    exit "$web"
 
 # A pull request changes either the rules or the code, never both; see CONTRIBUTING.md. Compares
 # the working tree, staged, unstaged and untracked files included, with its merge base with
@@ -245,13 +259,16 @@ web-audit:
     bun audit
 
 # Every installed package is listed, dev ones included, since the bundle can hold any of them. It
-# fails on a license about.toml doesn't accept.
+# fails on a license that neither about.toml accepts nor web-licenses.toml accepts for that
+# package. An entry in web-licenses.toml for a package not installed passes, so a rules pull
+# request can accept a license before the code pull request adds the package;
+# `just stale-licenses` fails on it once the package is gone.
 #
 # Writes the web UI's license notices to target/THIRD-PARTY-LICENSES-WEB.txt.
 web-notices: web-install install-policy
-    {{ trellis_policy }} web-notices about.toml crates/spareline/web/node_modules target/THIRD-PARTY-LICENSES-WEB.txt
+    {{ trellis_policy }} web-notices about.toml web-licenses.toml crates/spareline/web/node_modules target/THIRD-PARTY-LICENSES-WEB.txt
 
-# Builds the container image, with the license notices, as the release workflow does.
+# Builds the container image for this machine's architecture, with the license notices.
 image: notices
     docker build --file Containerfile --tag spareline:dev .
 
@@ -336,7 +353,7 @@ setup-github $dry_run="false":
     echo "Private vulnerability reporting, which SECURITY.md points to."
     change PUT "repos/$repo/private-vulnerability-reporting"
 
-    echo "A ruleset that protects main and requires PR title, CI passed and Rule changes stand alone."
+    protected="A ruleset that protects main and requires PR title, CI passed and Rule changes stand alone."
     ruleset='{"name": "main", "target": "branch", "enforcement": "active", "bypass_actors": [],
      "conditions": {"ref_name": {"include": ["refs/heads/main"], "exclude": []}},
      "rules": [
@@ -367,6 +384,7 @@ setup-github $dry_run="false":
         change DELETE "repos/$repo/branches/main/protection/required_status_checks" || return
       fi
     }
+    echo "$protected"
     protect
 
     echo

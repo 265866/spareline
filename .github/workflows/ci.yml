@@ -116,13 +116,13 @@ jobs:
 
       # cargo-dylint builds the lint library under target/dylint/libraries, from its git checkout,
       # and its driver under ~/.dylint_drivers; target/dylint/trellis-rev, which `just dylint`
-      # reads, says which trellis commit the library came from. rust-cache keeps only what the project's own
-      # dependencies build, so without this both rebuild on every run. The key holds everything
-      # the two builds depend on: the runner's system, image name and processor, the lints'
-      # nightly, the cargo-dylint version, and the libraries entry with its pinned trellis commit.
-      # It has no restore-keys, so a change to any of them misses. Only the builds are cached: the
-      # lint results for the project's own crates, under target/dylint/target, are not, so every
-      # run lints them again.
+      # reads, says which trellis commit the library came from. rust-cache keeps only what the
+      # project's own dependencies build, so without this both rebuild on every run. The key holds
+      # everything the two builds depend on: the runner's system, image name and processor, the
+      # lints' nightly, the cargo-dylint version, and the libraries entry with its pinned trellis
+      # commit. It has no restore-keys, so a change to any of them misses. Only the builds are
+      # cached: the lint results for the project's own crates, under target/dylint/target, are not,
+      # so every run lints them again.
       - name: Compute the lint build's cache key
         id: dylint-key
         shell: bash
