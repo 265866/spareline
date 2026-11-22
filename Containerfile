@@ -92,9 +92,9 @@ COPY --from=build /spareline /usr/local/bin/spareline
 # The service reads SPARELINE_WEB_DIR to find the web UI it serves.
 COPY --from=web /web/dist /usr/share/spareline/web
 ENV SPARELINE_WEB_DIR=/usr/share/spareline/web
-ENV HOST="0.0.0.0" \
-    PORT="8740" \
-    DATA_DIR="/app/data"
+ENV DATA_DIR="/app/data" \
+    HOST="0.0.0.0" \
+    PORT="8740"
 WORKDIR /app
 EXPOSE 8740
 ENTRYPOINT ["/usr/local/bin/spareline"]
