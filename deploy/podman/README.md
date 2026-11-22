@@ -41,12 +41,12 @@ podman login --authfile ~/.config/containers/auth.json ghcr.io
 
 ## Install
 
-1. From a checkout of this repository, copy this directory to the host, then run the installer
-   there:
+1. From this directory, in a checkout of this repository, copy it to the host, then run the
+   installer there:
 
    ```sh
    ssh HOST 'mkdir -p ~/services/spareline'
-   scp -r deploy/podman/. HOST:services/spareline/
+   scp -r ./. HOST:services/spareline/
    ssh HOST 'bash ~/services/spareline/install.sh && bash ~/services/spareline/verify.sh'
    ```
 
@@ -111,7 +111,7 @@ a maintenance window or the smoke threshold.
 `spareline-update.timer` runs `update.sh` hourly. `UPSTREAM` is `ghcr.io/265866/spareline:latest`
 unless `deploy.env` sets it, so a host takes every release, the next major version included. Set
 `UPSTREAM` to a minor version's tag, such as `ghcr.io/265866/spareline:0.2`, to take only its
-patch releases; [Stability](../../docs/stability.md) says what each kind of release may change.
+patch releases; [Stability](https://github.com/265866/spareline/blob/main/docs/stability.md) says what each kind of release may change.
 When `UPSTREAM` is a new image, `update.sh` does these steps:
 
 1. It runs `spareline smoke` in the new image against the live adb server. The new image must

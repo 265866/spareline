@@ -2,7 +2,8 @@
 # Checks the kit's show_units, which verify.sh runs, with a stand-in systemctl: it fails when any
 # one of the units isn't active, since `systemctl is-active a b c` passes when only one of them is.
 # Needs bash and coreutils, not systemd.
-#   bash deploy/tests/show-units.sh
+# Run it from the kit's directory, the one that holds podman/ and tests/:
+#   bash tests/show-units.sh
 # shellcheck source-path=SCRIPTDIR
 set -euo pipefail
 kit=$(cd "$(dirname "$0")/../podman" && pwd)
