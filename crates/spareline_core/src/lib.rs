@@ -3,6 +3,7 @@
 
 mod android;
 mod identifiers;
+mod probe;
 mod text;
 mod timestamp;
 mod version_line;
@@ -14,6 +15,11 @@ pub use android::{
 };
 pub use identifiers::{
     SubInfoCodes, SubInfoLookup, is_iccid, is_imei, sub_info_call, sub_info_codes, to_e164,
+};
+pub use probe::{
+    IDENTITY_INTERVAL, IDENTITY_RETRY_DELAYS, IdentityProbe, PROBE_TIMEOUT, PhoneHealth,
+    PhoneIdentity, ProbeError, SimIdentity, SlotPresence, SlotState, check_probe_exit,
+    health_command, identity_command, identity_due, parse_health, parse_identity,
 };
 pub use timestamp::Timestamp;
 pub use version_line::version_line;
