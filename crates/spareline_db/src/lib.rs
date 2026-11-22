@@ -10,6 +10,7 @@
 mod account_error;
 mod accounts;
 mod api_key;
+mod attachment_store;
 mod backup;
 mod database;
 mod database_error;
@@ -21,6 +22,8 @@ mod inventory;
 mod inventory_error;
 mod inventory_sync;
 mod js_text;
+mod message;
+mod message_store;
 mod migration;
 mod node_message;
 mod number_record;
@@ -47,6 +50,7 @@ mod test_passwords;
 pub use account_error::AccountError;
 pub use accounts::{Accounts, KEY_PREFIX, SESSION_LIFETIME};
 pub use api_key::{ApiKeyView, KeyScope, NewApiKey};
+pub use attachment_store::{AttachmentStore, SavedAttachment};
 pub use backup::{BackupError, BackupSaved, IntegrityOk, backup, check};
 pub use database::Database;
 pub use database_error::DatabaseError;
@@ -56,6 +60,11 @@ pub use field_patch::FieldPatch;
 pub use identity_reading::{IdentityReading, SimReading, SlotContents, SlotReading};
 pub use inventory::Inventory;
 pub use inventory_error::InventoryError;
+pub use message::{
+    AttachmentFile, AttachmentView, Attribution, Message, MessageKey, MessageNumber, MessagePage,
+    MessageScope, NewAttachment, NewMessage, Paging, Provider,
+};
+pub use message_store::MessageStore;
 pub use migration::AppliedMigration;
 pub use number_record::{LastMessage, NumberPatch, NumberPhone, NumberRecord};
 pub use number_summary::{NumberSource, NumberSummary};

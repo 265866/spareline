@@ -11,6 +11,7 @@ use crate::accounts::Accounts;
 use crate::database_error::DatabaseError;
 use crate::device_events::DeviceEvents;
 use crate::inventory::Inventory;
+use crate::message_store::MessageStore;
 use crate::migration::{AppliedMigration, MIGRATION_FILES, Migration};
 use crate::resolve;
 
@@ -111,6 +112,11 @@ impl Database {
     /// The device event log behind the event stream.
     pub fn device_events(&mut self) -> DeviceEvents<'_> {
         DeviceEvents::new(&mut self.connection)
+    }
+
+    /// Texts, their attachments' metadata, and the ingest cursors.
+    pub fn messages(&mut self) -> MessageStore<'_> {
+        MessageStore::new(&mut self.connection)
     }
 }
 
