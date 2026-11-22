@@ -18,6 +18,7 @@ pub mod healthcheck;
 mod login_limiter;
 pub mod monitor;
 mod policy_check;
+mod screen;
 mod shell_text;
 pub mod smoke;
 mod sms_ingest;
@@ -39,6 +40,7 @@ pub use devices::{
 pub use event_log::{EventLog, LogLine};
 pub use login_limiter::LoginLimiter;
 pub use policy_check::{PolicyCheckError, policy_check, read_profile};
+pub use screen::{FrameRate, SCREEN_SOCKET_LIMIT, ScreenSession, ScreenState, Screens};
 pub use sms_ingest::{
     IngestError, RECONCILE_INTERVAL, SmsIngest, SmsIngestOptions, TRIGGER_INTERVAL,
 };
