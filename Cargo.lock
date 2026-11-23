@@ -835,7 +835,7 @@ dependencies = [
 
 [[package]]
 name = "spareline"
-version = "0.2.2"
+version = "0.2.3"
 dependencies = [
  "clap",
  "spareline_adb",
@@ -847,7 +847,7 @@ dependencies = [
 
 [[package]]
 name = "spareline_adb"
-version = "0.2.2"
+version = "0.2.3"
 dependencies = [
  "serde_json",
  "thiserror",
@@ -856,7 +856,7 @@ dependencies = [
 
 [[package]]
 name = "spareline_core"
-version = "0.2.2"
+version = "0.2.3"
 dependencies = [
  "regex",
  "serde",
@@ -867,7 +867,7 @@ dependencies = [
 
 [[package]]
 name = "spareline_db"
-version = "0.2.2"
+version = "0.2.3"
 dependencies = [
  "argon2",
  "base64 0.23.1",
@@ -882,7 +882,7 @@ dependencies = [
 
 [[package]]
 name = "spareline_server"
-version = "0.2.2"
+version = "0.2.3"
 dependencies = [
  "axum",
  "form_urlencoded",
