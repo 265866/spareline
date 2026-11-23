@@ -37,6 +37,34 @@ jobs:
       - name: Install the pinned toolchain
         run: rustup toolchain install
 
+      # release-plz releases a push that merged a pull request from a `release-plz-` branch: the
+      # release pull request, or one made by hand. A `v*` tag on this commit without a published
+      # release, such as one pushed by hand, is built and published too.
+      # Such a push first runs the checks a release adds to `just policy`, so nothing is tagged or
+      # published while they fail, even if the pull request's own run of them was skipped or the
+      # rules changed since. This follows release-plz as release-plz.toml sets it up: the default
+      # `pr_branch_prefix`, `release-plz-`, and `release_always = false`. Changing either there is
+      # a rule change that must change this step, and CI's check of the release pull request, with
+      # it.
+      - name: Find whether this push releases
+        id: releases
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          branches=$(gh api "repos/$GITHUB_REPOSITORY/commits/$GITHUB_SHA/pulls" --jq '.[].head.ref')
+          if grep --quiet '^release-plz-' <<< "$branches" || [ -n "$(git tag --points-at HEAD --list 'v*')" ]; then
+            echo "releases=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: taiki-e/install-action@ab49d3c64680143e184118bed66a46419fc15519 # v2.90.5
+        if: steps.releases.outputs.releases == 'true'
+        with:
+          tool: just@1.59.0
+
+      - name: Check the docs as a release does
+        if: steps.releases.outputs.releases == 'true'
+        run: just policy-release
+
       # In git_only mode, release-plz@0.4.3 looks every crate up by name at the last release tag
       # and stops on one added or renamed since. A crate missing there gets its own tag name for
       # this run, so release-plz treats it as new; release-plz.toml can't name it before it exists.

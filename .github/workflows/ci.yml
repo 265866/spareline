@@ -70,6 +70,12 @@ jobs:
       - run: just deny
       - run: just links
       - run: just policy
+      # A release fails on what `just policy` only notes, such as a readme prompt left to write.
+      # The release pull request, from release-plz or from a `release-plz-` branch made by hand,
+      # shows that failure before anyone merges it.
+      - name: Check the docs as a release does
+        if: github.event_name == 'pull_request' && startsWith(github.head_ref, 'release-plz-')
+        run: just policy-release
       - run: just notices
       - run: just web-check
       - run: just web-build

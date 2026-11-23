@@ -1,7 +1,8 @@
 # Every check CI runs on a pull request is a recipe here, so `just ci` before pushing runs the same
 # checks. The exceptions are the pull request title, which only exists on GitHub, and the release
 # builds for each platform and the container image, which CI runs on their own runners. CI runs
-# `rule-changes` against the pull request's base, with the checker the base branch pins.
+# `rule-changes` against the pull request's base, with the checker the base branch pins;
+# `just ci <base>` does the same locally.
 # On Windows, recipes run in Windows PowerShell, which every Windows install has. The owner's
 # recipes, in the `owner` group, need admin rights on the repository or the release token, so
 # `just ci` leaves them out.
@@ -20,7 +21,7 @@ lints_nightly := "nightly-2026-11-12"
 
 # The trellis commit the lints in Cargo.toml and the checker below come from. `uvx copier update`
 # moves both.
-trellis_rev := "75916a993d65062702ba4009c9c2b3fbadba6d4c"
+trellis_rev := "e274e3b054a43c42d5e5268c402adfe744c5594f"
 
 # rustdoc warnings fail `just docs` and the doctests. Cargo reads `CARGO_ENCODED_RUSTDOCFLAGS`
 # before `RUSTDOCFLAGS`, so a caller's setting of either, even an empty one, can't drop the flag.
@@ -33,8 +34,11 @@ export CLIPPY_CONF_DIR := justfile_directory()
 default:
     @just --list
 
+# On a branch stacked on another pull request, pass the branch it targets as the argument, such as
+# `just ci origin/my-rules`, for `rule-changes` to compare against it.
+#
 # Runs every check CI runs.
-ci: fmt-check typos actionlint zizmor shear deny links policy lint dylint test docs build-release notices web-check web-build rule-changes
+ci base="origin/main": fmt-check typos actionlint zizmor shear deny links policy lint dylint test docs build-release notices web-check web-build (rule-changes base)
 
 # Installs the pinned toolchains: stable, the nightly rustfmt, and the lints' nightly.
 install-toolchains:
@@ -134,13 +138,20 @@ deny: web-audit
 links:
     lychee --offline --include-fragments --no-progress --exclude-path target --exclude-path crates/spareline/web/node_modules './**/*.md'
 
-# The structure rules: workspace lints, manifests, build scripts, config files, crate
-# dependencies, the release changelog, the docs index, and the docs layout that `docs_files` and
-# `readme_sections` in Cargo.toml set.
+# The structure rules: workspace lints, manifests, a published crate's license files, build
+# scripts, config files, crate dependencies, the release changelog, the docs index, the docs
+# layout that `docs_files` and `readme_sections` in Cargo.toml set, and the readme. What only a
+# release fails on, such as a readme prompt left to write, prints as a notice.
 #
 # Checks the structure rules.
 policy: install-policy
     {{ trellis_policy }} check
+
+# The release pull request and the release workflow run this before anything is published.
+#
+# Checks the structure rules as a release does, failing on the notices `just policy` prints too.
+policy-release: install-policy
+    {{ trellis_policy }} check --release
 
 # Runs clippy on every target with warnings as errors.
 lint:

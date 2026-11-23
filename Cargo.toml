@@ -5,11 +5,14 @@ members = ["crates/*"]
 # The custom lints from trellis, at the commit this project was last generated or updated from.
 [workspace.metadata.dylint]
 libraries = [
-    { git = "https://github.com/265866/trellis", rev = "75916a993d65062702ba4009c9c2b3fbadba6d4c", pattern = "lints" },
+    { git = "https://github.com/265866/trellis", rev = "e274e3b054a43c42d5e5268c402adfe744c5594f", pattern = "lints" },
 ]
 
 # Settings for `trellis-policy check`, which `just policy` runs. Changing them is a rule change.
 [workspace.metadata.policy]
+# What a person who uses the project sees, the primary one first: `web`, `desktop`, `terminal`,
+# `cli`, `service` or `library`. The `interface` and `other_interfaces` answers set it.
+interfaces = ["web"]
 # Crates allowed a build script. A build script can emit `cargo::rustc-cfg` and hide code from the
 # lint runs, so each one listed here needs a reason.
 build_script_crates = []
