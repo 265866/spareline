@@ -35,7 +35,7 @@ docs_files = [
     "docs/verifying-releases.md",
 ]
 # The `##` headings of README.md, exactly and in order.
-readme_sections = ["Run it", "Documentation", "License"]
+readme_sections = ["Quick start", "Documentation", "License"]
 
 # The workspace crates each member may depend on directly. A new crate, or a new edge between
 # crates, is a rule change.
