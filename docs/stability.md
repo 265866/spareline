@@ -15,11 +15,11 @@ Each release's notes, in [CHANGELOG.md](../CHANGELOG.md) and on the GitHub relea
 changed and what you must do before you upgrade. Read them before every minor upgrade.
 
 The minor image tag, such as `0.3`, follows that minor version's patch releases only, so pulling it
-never moves you to the next minor release. [Install](install.md) lists every tag.
+never moves you to the next minor release. [Container image](install.md) lists every tag.
 
 ## Names that stay the same
 
-Your scripts, links and the commands in [Install](install.md) and
+Your scripts, links and the commands in [Container image](install.md) and
 [Verify a release](verifying-releases.md) depend on these names, so no release changes them:
 
 - The `vX.Y.Z` tag form.
