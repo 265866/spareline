@@ -449,7 +449,7 @@ fn tenths(deci: i64) -> String {
 }
 
 /// `Number(slot) + 1` for the slot part of a spell's key. A serial with a colon in it, such as
-/// `192.168.1.5:5555`, splits there, as it did in the old monitor.
+/// `192.0.2.10:5555`, splits there, as it did in the old monitor.
 fn plus_one(slot: &str) -> String {
     if slot.is_empty() {
         return "1".to_owned();
@@ -700,13 +700,13 @@ mod tests {
     fn a_serial_with_a_colon_splits_its_spell_key_as_the_old_monitor_did() {
         let mut tracker = HealthTracker::new();
         tracker.out_of_service.push(Spell {
-            key: "192.168.1.5:5555:0".to_owned(),
+            key: "192.0.2.10:5555:0".to_owned(),
             since: at(0),
             in_service_streak: 0,
         });
         let alerts = tracker.alerts(&[], at(31));
-        assert_eq!(alerts[0].serial, "192.168.1.5");
-        assert_eq!(alerts[0].key, "out_of_service:192.168.1.5:5555:0");
+        assert_eq!(alerts[0].serial, "192.0.2.10");
+        assert_eq!(alerts[0].key, "out_of_service:192.0.2.10:5555:0");
         assert_eq!(
             alerts[0].message,
             "SIM 5556 out of service for more than 30 minutes."
