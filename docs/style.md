@@ -352,7 +352,8 @@ other code: clippy and the custom lints run on every target. These catch test co
   `rustfmt.toml`, so `just fmt-check` still fails.
 - **Spelling.** `just typos` reads test vectors too: the input of base64 `"Zm8="` is two letters
   it takes for a misspelled "of". Pick vectors that are words, such as `b"Man"` for `"TWFu"`.
-- **clippy.** `-D warnings` holds here too. `write!` into a `String` returns `fmt::Result`: use
+- **clippy.** `-D warnings` holds here too, and so does the pedantic set, such as
+  `single_match_else` and `map_unwrap_or`. `write!` into a `String` returns `fmt::Result`: use
   `writeln!(out, ..)?` in a helper that returns it, and unwrap once at the test, not
   `let _ = write!(..)`.
 - **Comments.** `code_comment` reads test bodies: move the explanation into the item's `///` doc,
