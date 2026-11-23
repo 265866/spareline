@@ -168,14 +168,14 @@ mod tests {
             ContentRows::default()
         );
         let rows = parse_content_rows(
-            "Row: 0 _id=1, mid=2047483647, ct=NULL, hex(text)=\n",
+            "Row: 0 _id=1, mid=1000000007, ct=NULL, hex(text)=\n",
             &["_id", "mid", "ct", "hex(text)"],
         );
         assert_eq!(
             rows.rows,
             [row(
                 &["_id", "mid", "ct", "hex(text)"],
-                &[Some("1"), Some("2047483647"), None, Some("")]
+                &[Some("1"), Some("1000000007"), None, Some("")]
             )]
         );
     }
