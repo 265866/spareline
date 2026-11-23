@@ -81,7 +81,7 @@ RUN if [ ! -f bun.lock ]; then \
          fi
 RUN bun run build
 
-FROM gcr.io/distroless/cc-debian13:nonroot@sha256:cb87acc574abe719b6e5c547384defa2f7b1f24af9605d3f618cf852495d8be2
+FROM gcr.io/distroless/cc-debian13:nonroot@sha256:532c7a94f9e96ba9db75eb9388f4227751131c7cb0a411d1a8521af4096135de
 LABEL org.opencontainers.image.source="https://github.com/265866/spareline" \
       org.opencontainers.image.description="Spare phone lines on spare phones, with an inbox for each line." \
       org.opencontainers.image.licenses="MIT OR Apache-2.0"
