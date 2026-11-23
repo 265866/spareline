@@ -142,10 +142,14 @@ pulled for this machine's architecture, so the image holds the wrong architectur
 - **Fail closed.** Input the code doesn't recognize is an error, not a default.
 - **Logs.** No secret, token or personal data in a log line or an error message.
 - **Test data.** A fixture, stand-in, mock or corpus recorded or generated from real use, and an
-  assertion copied from an older project's tests, is real data until every value in it has been
-  replaced. A check that guards against private values tests their shape and range, such as no
-  17-digit number in the range a service issues to people, and never holds a list of the values
-  themselves, hashed or not: a short list can be read back.
+  assertion copied from an older project's tests, is real data until every private, identifying or
+  locating value in it has been replaced. Public data kept as recorded, such as a public API's
+  response or a published signature, is fine; say so where it lives. A check that guards against
+  private values tests their shape and range, such as no 17-digit number in the range a service
+  issues to people, and never holds a list of the values themselves, hashed or not: a short list can
+  be read back. A value that isn't personal can still locate its owner, such as a store's address,
+  ZIP code or number, or a search's coordinates. A "mock" name or a "values are made up" comment
+  proves nothing, so check each value.
 - **Tests.** Put a test next to the code it tests, or in the crate's `tests/` directory when it
   uses only the crate's public API. A test is never skipped or retried: `#[ignore]` fails
   `just dylint`, and nextest has no retries. A test of timeouts, expiry, ordering or retries uses
@@ -235,6 +239,9 @@ these rules:
   stand-ins on loopback, and make the capture fail if the program opens a connection off
   loopback. Settings alone don't prove it: a build that can't read its settings falls back to
   its defaults and can fetch real content, and a container can read a public site as it starts.
+  Close off the program, not only the capture browser: run it in a network namespace with only
+  loopback, such as a container with `--network none` or `unshare --net`, or record the
+  connections it opens and check the list.
 - **Theme.** Dark mode, where the app has one.
 - **Web sizes.** Each page at a desktop width, such as 1440×900, and at a phone width, such as
   390×844 CSS pixels at 2×, which gives a 780×1688 image.

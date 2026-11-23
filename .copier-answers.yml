@@ -1,5 +1,5 @@
 # Copier writes this file. `uvx copier update` reads it to update the project from trellis.
-_commit: v0.20.0
+_commit: v0.20.1
 _src_path: https://github.com/265866/trellis.git
 architectures:
 - x86_64

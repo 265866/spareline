@@ -46,12 +46,43 @@ jobs:
       # `pr_branch_prefix`, `release-plz-`, and `release_always = false`. Changing either there is
       # a rule change that must change this step, and CI's check of the release pull request, with
       # it.
+      #
+      # GitHub's list of the pull requests a commit belongs to can lag just after the merge, and
+      # release-plz asks it again seconds later. So the step also reads the pull request's number
+      # from the commit's subject, which ends in ` (#N)` because the repository only squash-merges
+      # with the pull request's title, as `just setup-github` sets it, and asks GitHub for that
+      # pull request. The number counts only if that pull request was merged as this very commit,
+      # since whoever merges can edit the subject to end in another's number, and not if GitHub
+      # finds no such pull request, as for an issue's number; any other failure fails the step
+      # rather than skip the check.
+      #
+      # A push it misses anyway, such as one straight to `main`, is caught after release-plz:
+      # "Check the docs as a release does, after release-plz released" runs before the build and
+      # publish jobs.
       - name: Find whether this push releases
         id: releases
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           branches=$(gh api "repos/$GITHUB_REPOSITORY/commits/$GITHUB_SHA/pulls" --jq '.[].head.ref')
+          number=$(git log -1 --format=%s | sed -nE 's/.* \(#([0-9]+)\)$/\1/p')
+          if [ -n "$number" ]; then
+            error=$(mktemp)
+            if pull=$(gh api "repos/$GITHUB_REPOSITORY/pulls/$number" \
+              --jq '[.head.ref, .merged, .merge_commit_sha] | @tsv' 2> "$error"); then
+              IFS=$'\t' read -r branch merged merge_sha <<< "$pull"
+            elif grep --quiet 'HTTP 404' "$error"; then
+              merged=false
+            else
+              cat "$error" >&2
+              exit 1
+            fi
+            if [ "$merged" = true ] && [ "$merge_sha" = "$GITHUB_SHA" ]; then
+              branches="$branches"$'\n'"$branch"
+            else
+              number=
+            fi
+          fi
           if grep --quiet '^release-plz-' <<< "$branches" || [ -n "$(git tag --points-at HEAD --list 'v*')" ]; then
             echo "releases=true" >> "$GITHUB_OUTPUT"
           fi
@@ -124,6 +155,23 @@ jobs:
             fi
           fi
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
+      # The check before release-plz runs only on a push it knows releases. If release-plz released
+      # anyway, or a tag is left to publish, the check runs now, and if it fails the job fails, so
+      # no job that builds or publishes starts. release-plz has pushed the `v*` tag by then, and a
+      # re-run checks the same commit, while a later push releases nothing: release-plz skips a
+      # version whose tag exists, and "Read the tag" reads a tag only on this commit. So delete the
+      # tag, `git push origin :refs/tags/vX.Y.Z`, and merge the fix from a `release-plz-` branch,
+      # which releases that version; or merge the fix, move the tag to its commit,
+      # `git push --force origin <commit>:refs/tags/vX.Y.Z`, and re-run that commit's workflow.
+      - uses: taiki-e/install-action@ab49d3c64680143e184118bed66a46419fc15519 # v2.90.5
+        if: steps.releases.outputs.releases != 'true' && (steps.tag.outputs.tag != '' || (steps.release-plz.outputs.releases != '' && steps.release-plz.outputs.releases != '[]'))
+        with:
+          tool: just@1.59.0
+
+      - name: Check the docs as a release does, after release-plz released
+        if: steps.releases.outputs.releases != 'true' && (steps.tag.outputs.tag != '' || (steps.release-plz.outputs.releases != '' && steps.release-plz.outputs.releases != '[]'))
+        run: just policy-release
 
   image:
     name: Build, attest and sign the image

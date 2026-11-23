@@ -96,7 +96,7 @@ in front of it, as step 4 of [Install](crates/spareline/deploy/podman/README.md#
 
 - [Use the web app](docs/web-app.md): what each page shows, with desktop and phone screenshots.
 - [Run with Podman](crates/spareline/deploy/podman/README.md): install, configure, update, back up and restore spareline on the phones' server.
-- [Container image](docs/install.md): the image's tags, and running it with Docker.
+- [Container image](docs/install.md): the image's tags, and running it by hand with Podman or Docker.
 - [Verify a release](docs/verifying-releases.md): check that a download came from this repository.
 - [Design](docs/design.md): the goals, the architecture, and the decisions behind them.
 - [Stability](docs/stability.md): what a release can change, and what to read before you upgrade.

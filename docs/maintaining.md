@@ -27,8 +27,11 @@ Commit the generated project on a branch named `main` (`git init --initial-branc
    ```
 
    It allows squash merging only, with the pull request's title and description as the commit, so
-   the title becomes the commit on `main`. It creates the `release` label that release-plz puts on
-   its pull request.
+   the title becomes the commit on `main`. GitHub ends that title with the pull request's number,
+   ` (#12)`, which the release workflow reads to find the release pull request, so changing
+   `squash_merge_commit_title` from `PR_TITLE`, or allowing other merges, is a rule change that
+   must change its "Find whether this push releases" step with it. It creates the `release` label
+   that release-plz puts on its pull request.
 
    It adds the Actions policy that allows `pull_request_target` for `rule-changes.yml`; without
    it, a public repository doesn't run the rule-change check, and no pull request gets the "Rule
@@ -127,17 +130,33 @@ a change that ships joins it. To ship:
    a README without an opening paragraph, or one without its picture: an image before its first
    `##` linked to a heading of a page in `docs/`, or to a gallery page.
    So the first release fails until the README is written. Run `just policy-release` to see
-   what is left. The release workflow runs it again before it tags or publishes anything. If it
-   fails there, after the merge, nothing is released: write what it names on a branch whose name
-   starts with `release-plz-`, such as `release-plz-readme`, and merge its pull request, which
-   releases the version the release pull request set. The check runs on the pushes release-plz
-   releases as `release-plz.toml` sets it up: from a pull request whose branch starts with
-   release-plz's default `pr_branch_prefix`, `release-plz-`, with `release_always = false`.
-   Changing either there is a rule change that must change the condition in
-   `.github/workflows/ci.yml` and `.github/workflows/release.yml` with it. Merge no other pull
-   request until the release workflow's **Tag** job
-   finishes. A pull request merged before then can get no release pull request until the next
-   push to `main`.
+   what is left. The release workflow runs it again before it tags or publishes anything, on the
+   pushes release-plz releases as `release-plz.toml` sets it up: from a pull request whose branch
+   starts with release-plz's default `pr_branch_prefix`, `release-plz-`, with
+   `release_always = false`. Changing either there is a rule change that must change the
+   condition in `.github/workflows/ci.yml` and `.github/workflows/release.yml` with it. The
+   workflow finds that pull request from both GitHub's list of a commit's pull requests and the
+   ` (#12)` that ends the squash merge's subject, when that pull request was merged as that very
+   commit, since the list can lag just after a merge. A number GitHub has no pull request for,
+   such as an issue's, doesn't count; any other failed lookup stops the release.
+
+   If the check fails before release-plz, nothing is released: write what it names on a branch
+   whose name starts with `release-plz-`, such as `release-plz-readme`, and merge its pull
+   request, which releases the version the release pull request set.
+
+   If release-plz releases a push the check missed, the check runs after it, before anything is
+   built or published. If it fails there, release-plz has already pushed the `vX.Y.Z` tag. A
+   re-run checks the same commit, and a later merge releases nothing, since release-plz skips a
+   version whose tag exists. Release it one of two ways:
+
+   - Delete the tag, `git push origin :refs/tags/vX.Y.Z`, then merge the fix from a
+     `release-plz-` branch, which releases that version again.
+   - Merge the fix as usual, move the tag to its commit,
+     `git push --force origin <commit>:refs/tags/vX.Y.Z`, then re-run that commit's Release
+     workflow, which builds and publishes the tag.
+
+   Merge no other pull request until the release workflow's **Tag** job finishes. A pull request
+   merged before then can get no release pull request until the next push to `main`.
 4. If a later job fails, re-run the failed jobs. They pick up from the same tag.
 
 ### Keep releases verifiable
